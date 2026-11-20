@@ -298,7 +298,7 @@ export class WagerTransaction {
       gameId: p.gameId,
     };
     for (const [field, value] of Object.entries(required)) {
-      if (!value || !value.trim()) {
+      if (!value?.trim()) {
         throw new InvalidWagerTransactionError(`Campo obrigatório vazio: ${field}`);
       }
     }

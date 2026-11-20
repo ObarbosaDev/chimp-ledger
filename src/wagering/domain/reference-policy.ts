@@ -36,7 +36,7 @@ export function evaluateReference(
 ): ReferenceDecision {
   // Referência que ainda não chegou ou ainda não terminou: espero. Se eu
   // rejeitasse aqui, uma simples troca de ordem na fila virava erro.
-  if (!reference || !reference.isTerminal()) {
+  if (!reference?.isTerminal()) {
     return { outcome: 'WAIT' };
   }
   if (reference.status !== WagerTransactionStatus.Processed) {
