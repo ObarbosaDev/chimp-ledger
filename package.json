@@ -27,6 +27,7 @@
     "@nestjs/core": "11",
     "@nestjs/platform-fastify": "11",
     "decimal.js": "10",
+    "fastify": "5",
     "jose": "^6.2.18",
     "pg": "8",
     "pino": "^10.4.0",
