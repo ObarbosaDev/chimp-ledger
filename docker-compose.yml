@@ -1,0 +1,33 @@
+name: chimp-ledger
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chimp_migrator
+      POSTGRES_PASSWORD: chimp_migrator
+      POSTGRES_DB: chimp_ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chimp_migrator -d chimp_ledger"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sqs
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"sqs\": \"\\(running\\|available\\)\"'"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  postgres-data:
