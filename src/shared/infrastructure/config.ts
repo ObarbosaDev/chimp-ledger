@@ -31,6 +31,9 @@ const schema = z.object({
   // Porta do worker só para health checks e /metrics (0 = qualquer porta livre).
   WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(3001),
 
+  // Só para testes de recuperação: derruba o processo num ponto exato.
+  FAULT_INJECTION: z.enum(['crash-after-commit', 'crash-after-claim']).optional(),
+
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().default('test'),
   AWS_SECRET_ACCESS_KEY: z.string().default('test'),

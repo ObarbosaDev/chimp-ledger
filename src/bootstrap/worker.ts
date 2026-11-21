@@ -68,7 +68,11 @@ export async function createWorker(config: AppConfig, options: CoreOptions = {})
   const relay = new OutboxRelay(
     orm,
     countingPublisher(new SqsEventPublisher(sqs, queues.events), metrics),
-    { aggregatesPerRound: config.OUTBOX_AGGREGATES_PER_ROUND, leaseMs: config.OUTBOX_LEASE_MS },
+    {
+      aggregatesPerRound: config.OUTBOX_AGGREGATES_PER_ROUND,
+      leaseMs: config.OUTBOX_LEASE_MS,
+      afterClaim: config.FAULT_INJECTION === 'crash-after-claim' ? crash : undefined,
+    },
   );
 
   const consumer = new WagerConsumer(
@@ -79,6 +83,7 @@ export async function createWorker(config: AppConfig, options: CoreOptions = {})
       consumerName: config.SQS_CONSUMER_NAME,
       waitTimeSeconds: config.SQS_WAIT_TIME_SECONDS,
       retryBaseSeconds: config.SQS_RETRY_BASE_SECONDS,
+      afterCommit: config.FAULT_INJECTION === 'crash-after-commit' ? crash : undefined,
       onFailure: (error, kind, sqsMessageId) => {
         if (isLockConflict(error)) metrics.lockConflicts.inc({ source: 'sqs' });
         logger.warn({ event: 'wager.message_failed', kind, sqsMessageId, err: error });
@@ -192,4 +197,12 @@ async function outboxLagSeconds(orm: MikroORM): Promise<number> {
         where published_at is null`,
     );
   return Number(row?.lag ?? 0);
+}
+
+/**
+ * Morte imediata, sem nenhum código de encerramento: é o que acontece num
+ * kill -9 ou numa queda da máquina. Usado só com FAULT_INJECTION.
+ */
+function crash(): never {
+  process.exit(137);
 }
