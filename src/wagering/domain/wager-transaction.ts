@@ -42,6 +42,8 @@ export interface CreateWagerTransactionProps {
   kind: WagerTransactionKind;
   money: Money;
   referenceExternalTransactionId?: string;
+  /** Rastreio da requisição de origem. Não faz parte do conteúdo de negócio. */
+  correlationId?: string;
   createdAt: Date;
 }
 
@@ -93,6 +95,7 @@ export class WagerTransaction {
     public readonly money: Money,
     /** id no provedor — não o id interno */
     public readonly referenceExternalTransactionId: string | undefined,
+    public readonly correlationId: string | undefined,
     public readonly createdAt: Date,
     private _status: WagerTransactionStatus,
     private _referenceTransactionId: string | undefined,
@@ -159,6 +162,7 @@ export class WagerTransaction {
       s.kind,
       s.money,
       s.referenceExternalTransactionId,
+      s.correlationId,
       s.createdAt,
       s.status,
       s.referenceTransactionId,

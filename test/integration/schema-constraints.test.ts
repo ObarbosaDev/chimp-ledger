@@ -276,9 +276,9 @@ describe('esquema: restrições e triggers', () => {
     await expectError(insert(), /inbox_messages_pkey/);
   });
 
-  test('migração desce e sobe de novo sem sobrar nada', async () => {
+  test('todas as migrações descem e sobem de novo sem sobrar nada', async () => {
     owner.release();
-    await runMigrations(stack.migratorUrl, 'down');
+    await runMigrations(stack.migratorUrl, 'reset');
     const { rows } = await stack.ownerPool.query(
       `select count(*)::int as n from information_schema.tables
        where table_schema = 'public' and table_name in ('wallets', 'wallet_ledger_entries')`,

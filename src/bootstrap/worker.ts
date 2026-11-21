@@ -17,7 +17,7 @@ import { SubmitWagerTransaction } from '../wagering/application/submit-wager-tra
 import { WagerProcessor } from '../wagering/application/wager-processor';
 import { ReferenceRetryPolicy } from '../wagering/domain/reference-retry-policy';
 import { WageringModule } from '../wagering/wagering.module';
-import { CoreModule, ORM, UNIT_OF_WORK } from './core.module';
+import { CLOCK, CoreModule, ORM, UNIT_OF_WORK } from './core.module';
 
 @Module({})
 class WorkerModule {
@@ -63,7 +63,11 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
     app.get(UNIT_OF_WORK),
     app.get(WagerProcessor),
     app.get(ReferenceRetryPolicy),
-    { batchSize: config.REFERENCE_SWEEP_BATCH_SIZE },
+    app.get(CLOCK),
+    {
+      batchSize: config.REFERENCE_SWEEP_BATCH_SIZE,
+      onError: (id, error) => reportError(`pending-references:${id}`)(error),
+    },
   );
 
   const loops = [
