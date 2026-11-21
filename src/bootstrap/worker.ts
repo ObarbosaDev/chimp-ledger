@@ -12,9 +12,12 @@ import {
 import { WagerConsumer } from '../messaging/infrastructure/wager-consumer';
 import type { AppConfig } from '../shared/infrastructure/config';
 import { PollingLoop } from '../shared/infrastructure/polling-loop';
+import { ReprocessPendingReferences } from '../wagering/application/reprocess-pending-references';
 import { SubmitWagerTransaction } from '../wagering/application/submit-wager-transaction';
+import { WagerProcessor } from '../wagering/application/wager-processor';
+import { ReferenceRetryPolicy } from '../wagering/domain/reference-retry-policy';
 import { WageringModule } from '../wagering/wagering.module';
-import { CoreModule, ORM } from './core.module';
+import { CoreModule, ORM, UNIT_OF_WORK } from './core.module';
 
 @Module({})
 class WorkerModule {
@@ -56,6 +59,13 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
     retryBaseSeconds: config.SQS_RETRY_BASE_SECONDS,
   });
 
+  const pendingReferences = new ReprocessPendingReferences(
+    app.get(UNIT_OF_WORK),
+    app.get(WagerProcessor),
+    app.get(ReferenceRetryPolicy),
+    { batchSize: config.REFERENCE_SWEEP_BATCH_SIZE },
+  );
+
   const loops = [
     new PollingLoop('outbox-relay', async () => (await relay.runOnce(new Date())) > 0, {
       idleDelayMs: config.OUTBOX_POLL_MS,
@@ -68,6 +78,15 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
       errorDelayMs: 1_000,
       onError: reportError('wager-consumer'),
     }),
+    new PollingLoop(
+      'pending-references',
+      async () => (await pendingReferences.runOnce(new Date())) > 0,
+      {
+        idleDelayMs: config.REFERENCE_SWEEP_POLL_MS,
+        errorDelayMs: 1_000,
+        onError: reportError('pending-references'),
+      },
+    ),
   ];
 
   return {

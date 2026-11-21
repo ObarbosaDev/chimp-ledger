@@ -25,6 +25,8 @@ const schema = z.object({
   REFERENCE_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(300_000),
   REFERENCE_RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   REFERENCE_RETRY_TTL_MS: z.coerce.number().int().positive().default(3_600_000),
+  REFERENCE_SWEEP_POLL_MS: z.coerce.number().int().positive().default(1_000),
+  REFERENCE_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().default('test'),
