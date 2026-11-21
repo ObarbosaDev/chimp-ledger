@@ -11,6 +11,12 @@ const schema = z.object({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(2_000),
 
+  // Espera por referência fora de ordem (ver ReferenceRetryPolicy).
+  REFERENCE_RETRY_BASE_MS: z.coerce.number().int().positive().default(2_000),
+  REFERENCE_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(300_000),
+  REFERENCE_RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  REFERENCE_RETRY_TTL_MS: z.coerce.number().int().positive().default(3_600_000),
+
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().default('test'),
   AWS_SECRET_ACCESS_KEY: z.string().default('test'),

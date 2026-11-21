@@ -30,6 +30,7 @@ const DOMAIN_STATUS: Record<string, { status: number; publicCode?: string }> = {
   INVALID_MOVEMENT: { status: 400, publicCode: 'INVALID_PAYLOAD' },
   WALLET_NOT_FOUND: { status: 404 },
   TRANSACTION_NOT_FOUND: { status: 404 },
+  PROVIDER_NOT_ALLOWED: { status: 422 },
   WALLET_ALREADY_EXISTS: { status: 409 },
   IDEMPOTENCY_CONFLICT: { status: 409 },
 };

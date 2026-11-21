@@ -4,13 +4,17 @@ import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { AppConfig } from '../shared/infrastructure/config';
 import { HttpErrorFilter } from '../shared/infrastructure/http/http-error.filter';
+import { WageringModule } from '../wagering/wagering.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { CoreModule } from './core.module';
 
 @Module({})
 class ApiModule {
   static forRoot(config: AppConfig): DynamicModule {
-    return { module: ApiModule, imports: [CoreModule.forRoot(config), WalletModule] };
+    return {
+      module: ApiModule,
+      imports: [CoreModule.forRoot(config), WalletModule, WageringModule],
+    };
   }
 }
 
