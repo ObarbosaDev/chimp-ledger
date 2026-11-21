@@ -14,6 +14,7 @@ import { MikroOrmUnitOfWork } from '../../src/shared/infrastructure/database/mik
 import { createOrm, ENTITY_SCHEMAS } from '../../src/shared/infrastructure/database/orm';
 import { SystemClock, UuidV7Generator } from '../../src/shared/infrastructure/system';
 import { SubmitWagerTransaction } from '../../src/wagering/application/submit-wager-transaction';
+import { WagerProcessor } from '../../src/wagering/application/wager-processor';
 import { ReferenceRetryPolicy } from '../../src/wagering/domain/reference-retry-policy';
 import { OpenWallet } from '../../src/wallet/application/open-wallet';
 import { startTestStack, type TestStack } from '../support/test-stack';
@@ -31,6 +32,7 @@ describe('consumidor SQS de transações', () => {
     maxAttempts: 10,
     ttlMs: 3_600_000,
   });
+  const processor = new WagerProcessor(new UuidV7Generator(), retry);
 
   beforeAll(async () => {
     stack = await startTestStack();
@@ -39,7 +41,7 @@ describe('consumidor SQS de transações', () => {
     queues = await ensureQueues(stack.sqs, stack.queueNames);
     orm = await createOrm(loadConfig({ DATABASE_URL: stack.appUrl }));
     const uow = new MikroOrmUnitOfWork(orm, 2_000);
-    submit = new SubmitWagerTransaction(uow, new UuidV7Generator(), new SystemClock(), retry);
+    submit = new SubmitWagerTransaction(uow, new UuidV7Generator(), new SystemClock(), processor);
     openWallet = new OpenWallet(uow, new UuidV7Generator(), new SystemClock());
   }, 180_000);
 
@@ -214,7 +216,7 @@ describe('consumidor SQS de transações', () => {
       new MikroOrmUnitOfWork(brokenOrm, 2_000),
       new UuidV7Generator(),
       new SystemClock(),
-      retry,
+      processor,
     );
 
     expect(await consumer(broken).pollOnce()).toBe(1);
@@ -242,7 +244,7 @@ describe('consumidor SQS de transações', () => {
         new MikroOrmUnitOfWork(brokenOrm, 2_000),
         new UuidV7Generator(),
         new SystemClock(),
-        retry,
+        processor,
       ),
     );
 

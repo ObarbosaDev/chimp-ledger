@@ -5,6 +5,7 @@ import type { UnitOfWork } from '../shared/application/unit-of-work';
 import type { AppConfig } from '../shared/infrastructure/config';
 import { GetTransaction } from './application/get-transaction';
 import { SubmitWagerTransaction } from './application/submit-wager-transaction';
+import { WagerProcessor } from './application/wager-processor';
 import { ReferenceRetryPolicy } from './domain/reference-retry-policy';
 import { WageringController } from './infrastructure/http/wagering.controller';
 
@@ -23,10 +24,15 @@ import { WageringController } from './infrastructure/http/wagering.controller';
         }),
     },
     {
+      provide: WagerProcessor,
+      inject: [ID_GENERATOR, ReferenceRetryPolicy],
+      useFactory: (ids: IdGenerator, retry: ReferenceRetryPolicy) => new WagerProcessor(ids, retry),
+    },
+    {
       provide: SubmitWagerTransaction,
-      inject: [UNIT_OF_WORK, ID_GENERATOR, CLOCK, ReferenceRetryPolicy],
-      useFactory: (uow: UnitOfWork, ids: IdGenerator, clock: Clock, retry: ReferenceRetryPolicy) =>
-        new SubmitWagerTransaction(uow, ids, clock, retry),
+      inject: [UNIT_OF_WORK, ID_GENERATOR, CLOCK, WagerProcessor],
+      useFactory: (uow: UnitOfWork, ids: IdGenerator, clock: Clock, processor: WagerProcessor) =>
+        new SubmitWagerTransaction(uow, ids, clock, processor),
     },
     {
       provide: GetTransaction,
@@ -34,6 +40,6 @@ import { WageringController } from './infrastructure/http/wagering.controller';
       useFactory: (uow: UnitOfWork) => new GetTransaction(uow),
     },
   ],
-  exports: [SubmitWagerTransaction, ReferenceRetryPolicy],
+  exports: [SubmitWagerTransaction, WagerProcessor, ReferenceRetryPolicy],
 })
 export class WageringModule {}
