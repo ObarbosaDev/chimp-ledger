@@ -5,7 +5,7 @@ const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
 // Tudo que a aplicação lê do ambiente passa por aqui, uma vez, no boot.
 // Se faltar algo obrigatório o processo nem sobe — prefiro falhar no deploy
 // do que descobrir em produção que a fila estava apontando para o lugar errado.
-const schema = z.object({
+const baseSchema = z.object({
   DATABASE_URL: z.string().url(),
   MIGRATOR_DATABASE_URL: z.string().url().optional(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
@@ -49,7 +49,17 @@ const schema = z.object({
     .positive()
     .default(16 * 1024),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  // Autenticação OIDC (Keycloak no compose). Desligada por padrão no ambiente local.
   AUTH_ENABLED: bool.default('false'),
+  AUTH_ISSUER_URL: z.string().url().optional(),
+  AUTH_AUDIENCE: z.string().min(1).default('chimp-ledger'),
+});
+
+// Autenticação ligada sem emissor seria uma API aberta achando que está
+// protegida. Prefiro que o processo nem suba.
+const schema = baseSchema.refine((c) => !c.AUTH_ENABLED || c.AUTH_ISSUER_URL, {
+  message: 'AUTH_ISSUER_URL é obrigatório quando AUTH_ENABLED=true',
+  path: ['AUTH_ISSUER_URL'],
 });
 
 export type AppConfig = z.infer<typeof schema>;

@@ -10,9 +10,12 @@ import {
   Res,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
+import { CurrentPrincipal, RequireScopes } from '../../../auth/decorators';
+import { type Principal, Scope } from '../../../auth/principal';
 import { ID_GENERATOR } from '../../../bootstrap/core.module';
 import type { IdGenerator } from '../../../shared/application/ports';
 import { ZodBody } from '../../../shared/infrastructure/http/zod-body';
+import { TransactionNotFoundError } from '../../application/errors';
 import { GetTransaction, type TransactionView } from '../../application/get-transaction';
 import {
   type SubmitWagerResult,
@@ -46,12 +49,17 @@ export class WageringController {
   ) {}
 
   @Post('wagering/transactions')
+  @RequireScopes(Scope.WagerWrite)
   async create(
     @Body(new ZodBody(wagerOperation)) body: WagerOperation,
     @Headers('idempotency-key') rawKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
+    @CurrentPrincipal() principal: Principal | undefined,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<SubmitWagerResult> {
+    // Quem é o provedor quem diz é o token, não o corpo. Um provedor com
+    // credencial vazada ainda assim só consegue mexer no que é dele.
+    principal?.assertActsAs(body.providerId);
     const idempotencyKey = idempotencyKeyHeader.parse(rawKey);
     const result = await this.submit.execute(
       { ...body, idempotencyKey },
@@ -62,15 +70,28 @@ export class WageringController {
   }
 
   @Get('wagering/transactions/:transactionId')
-  byId(@Param('transactionId', new ParseUUIDPipe()) id: string): Promise<TransactionView> {
-    return this.getTransaction.byId(id);
+  @RequireScopes(Scope.WalletRead)
+  async byId(
+    @Param('transactionId', new ParseUUIDPipe()) id: string,
+    @CurrentPrincipal() principal: Principal | undefined,
+  ): Promise<TransactionView> {
+    const view = await this.getTransaction.byId(id);
+    // Transação de outro provedor responde como inexistente: 403 aqui
+    // confirmaria que aquele id existe.
+    if (principal?.providerId && principal.providerId !== view.providerId) {
+      throw new TransactionNotFoundError(`Transação ${id} não encontrada`);
+    }
+    return view;
   }
 
   @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
+  @RequireScopes(Scope.WalletRead)
   byExternalId(
     @Param('providerId') providerId: string,
     @Param('externalTransactionId') externalId: string,
+    @CurrentPrincipal() principal: Principal | undefined,
   ): Promise<TransactionView> {
+    if (principal?.providerId) principal.assertActsAs(providerId);
     return this.getTransaction.byExternalId(providerId, externalId);
   }
 }

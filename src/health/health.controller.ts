@@ -2,12 +2,14 @@ import type { SQSClient } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { Controller, Get, Header, Inject, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
+import { Public } from '../auth/decorators';
 import { CONFIG, METRICS, ORM, SQS } from '../bootstrap/core.module';
 import type { AppConfig } from '../shared/infrastructure/config';
 import type { AppMetrics } from '../shared/infrastructure/observability/metrics';
 import { checkReadiness } from './readiness';
 
-/** Endpoints operacionais: abertos, sem autenticação. */
+/** Endpoints operacionais: abertos, sem autenticação (orquestrador e Prometheus não têm token). */
+@Public()
 @Controller()
 export class HealthController {
   constructor(

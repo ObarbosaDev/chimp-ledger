@@ -62,6 +62,13 @@ export class AppMetrics {
     registers: [this.registry],
   });
 
+  readonly authFailures = new Counter({
+    name: 'auth_failures_total',
+    help: 'Requisições recusadas na autenticação, por motivo',
+    labelNames: ['reason'],
+    registers: [this.registry],
+  });
+
   readonly reconciliationDivergences = new Counter({
     name: 'reconciliation_divergences_total',
     help: 'Reconciliações que encontraram divergência entre saldo e ledger',

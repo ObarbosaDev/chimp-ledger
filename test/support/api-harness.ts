@@ -28,6 +28,8 @@ export interface ApiHarness {
 
 export interface ApiHarnessOptions {
   captureLogs?: boolean;
+  /** Variáveis de ambiente extras (ex.: ligar autenticação). */
+  env?: Record<string, string>;
 }
 
 /** App HTTP real (Nest + Fastify) ligado a Postgres e LocalStack reais. */
@@ -44,6 +46,7 @@ export async function startApiHarness(options: ApiHarnessOptions = {}): Promise<
     MIGRATOR_DATABASE_URL: stack.migratorUrl,
     SQS_ENDPOINT: stack.sqsEndpoint,
     LOG_LEVEL: options.captureLogs ? 'info' : 'silent',
+    ...options.env,
   });
   const logs: string[] = [];
   const app = await createApiApp(config, {

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { type DynamicModule, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { AuthModule } from '../auth/auth.module';
 import { HealthController } from '../health/health.controller';
 import type { AppConfig } from '../shared/infrastructure/config';
 import { HttpErrorFilter } from '../shared/infrastructure/http/http-error.filter';
@@ -16,7 +17,7 @@ class ApiModule {
   static forRoot(config: AppConfig, options: CoreOptions): DynamicModule {
     return {
       module: ApiModule,
-      imports: [CoreModule.forRoot(config, options), WalletModule, WageringModule],
+      imports: [CoreModule.forRoot(config, options), AuthModule, WalletModule, WageringModule],
       controllers: [HealthController],
     };
   }
