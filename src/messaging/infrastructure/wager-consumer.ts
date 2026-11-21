@@ -9,7 +9,7 @@ import {
 import { z } from 'zod';
 import type { SubmitWagerTransaction } from '../../wagering/application/submit-wager-transaction';
 import { idempotencyKeyHeader, wagerOperation } from '../../wagering/infrastructure/wager-contract';
-import { classifyFailure, type FailureKind } from './failure-classifier';
+import { classifyFailure, type FailureKind, failureReason } from './failure-classifier';
 import type { QueueUrls } from './sqs-topology';
 
 export interface WagerConsumerOptions {
@@ -144,7 +144,7 @@ export class WagerConsumer {
         MessageAttributes: {
           failureReason: {
             DataType: 'String',
-            StringValue: (error instanceof Error ? error.message : String(error)).slice(0, 256),
+            StringValue: failureReason(error),
           },
         },
       }),

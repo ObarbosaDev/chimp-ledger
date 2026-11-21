@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   GetQueueAttributesCommand,
   PurgeQueueCommand,
+  ReceiveMessageCommand,
   SendMessageCommand,
 } from '@aws-sdk/client-sqs';
 import { MikroORM, PostgreSqlDriver } from '@mikro-orm/postgresql';
@@ -197,6 +198,34 @@ describe('consumidor SQS de transações', () => {
 
     expect(await approxCount(queues.transactions)).toBe(0);
     expect(await approxCount(queues.transactionsDlq)).toBe(1);
+  });
+
+  // Esses dois casos não chegam a gravar transação (a carteira ou o provedor
+  // nem existem para a FK). Confirmar e apagar seria perder a operação sem
+  // deixar rastro; na DLQ ela fica visível e pode ser reenviada depois.
+  test.each([
+    ['carteira inexistente', { walletId: randomUUID() }, /WALLET_NOT_FOUND|não encontrada/],
+    [
+      'provedor desconhecido',
+      { providerId: 'provider-zzz' },
+      /PROVIDER_NOT_ALLOWED|não pode operar/,
+    ],
+  ])('%s vai para a DLQ com o motivo', async (_n, over, reason) => {
+    const w = await wallet();
+    await send(message(w, over));
+
+    await consumer().pollOnce();
+
+    expect(await approxCount(queues.transactions)).toBe(0);
+    const { Messages = [] } = await stack.sqs.send(
+      new ReceiveMessageCommand({
+        QueueUrl: queues.transactionsDlq,
+        MessageAttributeNames: ['All'],
+        WaitTimeSeconds: 1,
+      }),
+    );
+    expect(Messages).toHaveLength(1);
+    expect(Messages[0]?.MessageAttributes?.failureReason?.StringValue).toMatch(reason);
   });
 
   test('falha transitória não confirma: reentrega até dar certo', async () => {
