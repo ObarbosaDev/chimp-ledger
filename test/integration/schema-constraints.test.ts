@@ -237,6 +237,40 @@ describe('esquema: restrições e triggers', () => {
     await expectError(reversal('ROLLBACK'), /uq_wager_transactions_reversal_once/);
   });
 
+  // O Postgres procura tabela temporária antes do schema public. Sem
+  // search_path fixo nas funções, uma tabela temporária com o mesmo nome
+  // faria a checagem de encadeamento ler um "último lançamento" falso.
+  test('tabela temporária com o mesmo nome não engana a checagem do ledger', async () => {
+    const { walletId, playerId } = await seedWallet();
+    const bet = await insertBet(walletId, playerId);
+    const forgedHead = 'f'.repeat(64);
+    const app = await stack.appPool.connect();
+    try {
+      await app.query('begin');
+      await app.query(
+        'create temp table wallet_ledger_entries (like public.wallet_ledger_entries) on commit drop',
+      );
+      await app.query(
+        `insert into wallet_ledger_entries (id, wallet_id, transaction_id, sequence, direction, amount,
+           currency, balance_before, balance_after, prev_hash, entry_hash, created_at)
+         values ($1, $2, $3, 1, 'CREDIT', 1000, 'BRL', 0, 1000, 'x', $4, now())`,
+        [randomUUID(), walletId, bet.id, forgedHead],
+      );
+      await expectError(
+        app.query(
+          `insert into public.wallet_ledger_entries (id, wallet_id, transaction_id, sequence, direction,
+             amount, currency, balance_before, balance_after, prev_hash, entry_hash, created_at)
+           values ($1, $2, $3, 2, 'DEBIT', 10, 'BRL', 1000, 990, $4, $5, now())`,
+          [randomUUID(), walletId, bet.id, forgedHead, 'e'.repeat(64)],
+        ),
+        /não encadeia/,
+      );
+    } finally {
+      await app.query('rollback');
+      app.release();
+    }
+  });
+
   test('chave de idempotência é única por provedor', async () => {
     const { walletId, playerId } = await seedWallet();
     const bet = await insertBet(walletId, playerId);
