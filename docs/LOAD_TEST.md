@@ -8,7 +8,7 @@ bun run test:load
 LOAD_CONCURRENCY=48 LOAD_DURATION_S=30 LOAD_WALLETS=200 LOAD_INSTANCES=3 bun run test:load
 ```
 
-O resultado completo de cada execução fica em `test/load/results/` (JSON, fora do Git). As tabelas abaixo são das execuções de 21/11/2026.
+O resultado completo de cada execução fica em `test/load/results/` (JSON, fora do Git). As tabelas abaixo são das execuções de 21/11/2026: três para entender o sistema e uma quarta, depois de corrigir o gargalo que elas revelaram.
 
 ---
 
@@ -84,12 +84,51 @@ Outbox: lag máximo 38 s, esvaziou 14 s depois.
 - **um evento por chamada, em ordem, por carteira:** é o que garante que os eventos de uma carteira nunca saem fora de ordem, mesmo com falha parcial;
 - **um único worker** no teste.
 
-Nada se perde: a outbox esvaziou em ~20 s depois do fim da carga, e o lag aparece na métrica `outbox_lag_seconds`, que é o que um alerta precisa observar. Mas, em produção, com essa taxa contínua, o lag cresceria sem parar. Os próximos passos, em ordem de custo:
-1. **mais workers:** a reivindicação por carteira com lease já permite isso, porque cada carteira só fica com um relay por vez;
-2. **lote por carteira:** enviar os eventos consecutivos de uma carteira num único `SendMessageBatch`, parando no primeiro que falhar;
-3. **mais carteiras por rodada e intervalo menor** entre rodadas quando há fila.
+Nada se perdeu: a outbox esvaziou em ~20 s depois do fim da carga, e o lag aparece na métrica `outbox_lag_seconds`, que é o que um alerta precisa observar. Mas, com essa taxa contínua, o lag cresceria sem parar. A seção seguinte conta como isso foi resolvido.
 
 **6. Correção não degradou com a carga.** 0% de erro de infraestrutura, todas as duplicatas viraram replay e as invariantes fecharam em todas as carteiras, nas três execuções.
+
+---
+
+## Antes e depois: o gargalo da outbox
+
+**Primeira hipótese: falta de paralelismo. Errada.** Coloquei 4 vias de publicação no mesmo worker (cada via reivindica carteiras diferentes, então a ordem por carteira continua garantida). Rodei a carga de novo: o lag foi de 54 s para 48 s. Quase nada. Paralelismo não era o problema.
+
+**Medir antes de chutar de novo.** Separei as duas metades do caminho da outbox:
+
+- **Reivindicação:** `EXPLAIN ANALYZE` com 20 mil eventos pendentes em 200 carteiras deu ~70 ms por rodada. A consulta busca o evento mais antigo de cada carteira (`DISTINCT ON`), e sem índice nessa ordem o Postgres varre e ordena todos os pendentes a cada rodada. É um custo real, que cresce com o acúmulo, mas sozinho não explicava 54 s.
+- **Publicação:** um benchmark direto contra o SQS do LocalStack mostrou o teto:
+
+| Forma de publicar | Vazão |
+|---|---|
+| 1 mensagem por chamada, 50 concorrentes | 474 msg/s |
+| 1 mensagem por chamada, 200 concorrentes | 495 msg/s |
+| 10 mensagens por chamada, 50 concorrentes | **3.360 msg/s** |
+
+**Essa era a causa.** O custo está em cada chamada, não na concorrência: com uma mensagem por chamada, o teto fica perto de 480 msg/s, e a API gera ~660 eventos/s. O lag crescer é aritmética.
+
+**A correção:**
+1. **Lote por carteira:** os eventos de uma carteira vão em lotes de até 10, na ordem. Numa fila FIFO o SQS enfileira o lote na ordem enviada.
+2. **Índice parcial** `(aggregate_id, occurred_at, id) where published_at is null`, para a reivindicação ler só a cabeça de cada carteira.
+
+**O preço do lote, tratado às claras.** Num lote, o SQS devolve um resultado por mensagem. Se ele recusar só uma do meio e aceitar as seguintes, essas seguintes já estão na fila na frente da que falhou. Esse caso é raro (falha de rede ou throttling derruba a chamada inteira, e aí a ordem fica preservada), mas pode acontecer. Por isso:
+- o que o SQS aceitou conta como publicado, porque está na fila de verdade;
+- o evento que falhou ganha nova tentativa, e os que nem foram enviados voltam para a outbox;
+- o caso vira a métrica `outbox_order_anomalies_total` e um log de alerta, e o consumidor tem o `walletVersion` de cada evento para reordenar.
+
+**Execução 4: mesmos parâmetros da execução 1, com lote e índice**
+
+| Cenário | Carteiras | req/s | aplicadas/s | p50 | p95 | p99 | Erros | Conflitos de lock |
+|---|---|---|---|---|---|---|---|---|
+| distribuído | 200 | 330 | 314 | 134 ms | 277 ms | 404 ms | 0,00% | 0 |
+| carteira quente | 1 | 92 | 88 | 570 ms | 910 ms | 1.057 ms | 0,00% | 0 |
+
+| Outbox | Antes (execução 1) | Depois (execução 4) |
+|---|---|---|
+| Lag máximo durante a carga | 54 s | **4,7 s** |
+| Tempo para esvaziar depois da carga | 23 s | **0,2 s** |
+
+A vazão da API ficou na mesma faixa (ela não dependia da outbox), as invariantes continuaram íntegras e a outbox passou a acompanhar a carga.
 
 ## Limitações (o que este teste não prova)
 
