@@ -14,6 +14,7 @@ export interface WagerTransactionRecord {
   amount: string;
   currency: string;
   referenceExternalTransactionId?: string | null;
+  correlationId?: string | null;
   referenceTransactionId?: string | null;
   status: string;
   failureCode?: string | null;
@@ -44,6 +45,7 @@ export const WagerTransactionSchema = new EntitySchema<WagerTransactionRecord>({
     amount: money,
     currency: { type: 'string', columnType: 'char(3)' },
     referenceExternalTransactionId: { type: 'string', nullable: true },
+    correlationId: { type: 'string', nullable: true },
     referenceTransactionId: { type: 'uuid', nullable: true },
     status: { type: 'string' },
     failureCode: { type: 'string', nullable: true },

@@ -1,7 +1,8 @@
 import { Migrator } from '@mikro-orm/migrations';
 import { MikroORM, PostgreSqlDriver } from '@mikro-orm/postgresql';
 
-export type MigrationDirection = 'up' | 'down';
+/** up: aplica as pendentes · down: desfaz a última · reset: desfaz todas. */
+export type MigrationDirection = 'up' | 'down' | 'reset';
 
 /**
  * Roda as migrações versionadas de `migrations/` com o usuário dono do banco.
@@ -32,8 +33,10 @@ export async function runMigrations(url: string, direction: MigrationDirection):
     const migrator = orm.getMigrator();
     if (direction === 'up') {
       await migrator.up();
-    } else {
+    } else if (direction === 'down') {
       await migrator.down();
+    } else {
+      await migrator.down({ to: 0 });
     }
   } finally {
     await orm.close(true);

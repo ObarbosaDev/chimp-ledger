@@ -67,6 +67,7 @@ export class SubmitWagerTransaction {
       kind: command.kind as WagerTransactionKind,
       money: Money.from(command.money),
       referenceExternalTransactionId: command.referenceExternalTransactionId,
+      correlationId: context.correlationId,
       createdAt: at,
     });
 
