@@ -113,12 +113,21 @@ export async function createWorker(config: AppConfig, options: CoreOptions = {})
   const loopError = (loop: string) => (error: unknown) =>
     logger.error({ event: 'worker.loop_failed', loop, err: error });
 
+  // Várias vias de publicação no mesmo processo. Cada via reivindica carteiras
+  // diferentes (SKIP LOCKED), e dentro de uma carteira continua um evento por
+  // vez: a vazão sobe sem abrir mão da ordem.
+  const relayLanes = Array.from(
+    { length: config.OUTBOX_RELAY_LANES },
+    (_, lane) =>
+      new PollingLoop(`outbox-relay-${lane}`, async () => (await relay.runOnce(new Date())) > 0, {
+        idleDelayMs: config.OUTBOX_POLL_MS,
+        errorDelayMs: 1_000,
+        onError: loopError(`outbox-relay-${lane}`),
+      }),
+  );
+
   const loops = [
-    new PollingLoop('outbox-relay', async () => (await relay.runOnce(new Date())) > 0, {
-      idleDelayMs: config.OUTBOX_POLL_MS,
-      errorDelayMs: 1_000,
-      onError: loopError('outbox-relay'),
-    }),
+    ...relayLanes,
     // O long polling já espera por mensagem, então a pausa ociosa é mínima.
     new PollingLoop('wager-consumer', async () => (await consumer.pollOnce()) > 0, {
       idleDelayMs: 10,

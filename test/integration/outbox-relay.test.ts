@@ -232,6 +232,40 @@ describe('relay da outbox', () => {
     await drainEvents();
   }, 60_000);
 
+  // É assim que o worker roda: várias vias chamando o mesmo relay ao mesmo
+  // tempo. Cada via reivindica carteiras diferentes; dentro de uma carteira
+  // a ordem não pode mudar e nenhum evento pode sair duas vezes.
+  test('várias vias no mesmo relay mantêm a ordem e não repetem evento', async () => {
+    const wallets = Array.from({ length: 12 }, (_, i) => `wallet-via-${i}`);
+    for (const w of wallets) await seed(15, w);
+    const publishLog: string[] = [];
+    const real = realPublisher();
+    const shared = relay(
+      {
+        async publish(events) {
+          const outcome = await real.publish(events);
+          publishLog.push(...outcome.published);
+          return outcome;
+        },
+      },
+      2,
+    );
+
+    let total = 0;
+    for (let round = 0; round < 40 && total < 180; round++) {
+      const lanes = await Promise.all(Array.from({ length: 4 }, () => shared.runOnce(plus(1_000))));
+      total += lanes.reduce((sum, n) => sum + n, 0);
+    }
+
+    expect(total).toBe(180);
+    expect(new Set(publishLog).size).toBe(publishLog.length);
+    for (const w of wallets) {
+      const expected = await idsInOrder(w);
+      expect(publishLog.filter((id) => expected.includes(id))).toEqual(expected);
+    }
+    await drainEvents();
+  }, 60_000);
+
   test('evento de transação que deu rollback nunca existe na outbox', async () => {
     const uow = new MikroOrmUnitOfWork(orm, 2_000);
     const fakeEvent = {
