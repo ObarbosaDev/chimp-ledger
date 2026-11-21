@@ -62,6 +62,13 @@ export class WagerProcessor {
   ): Promise<SubmitWagerResult> {
     const run = new Run(tx, transaction, wallet, this.eventContexts(origin, at), at);
 
+    // A submissão já recusa provedor bloqueado antes de gravar qualquer coisa,
+    // mas uma transação pendente pode esperar até uma hora. Se o provedor foi
+    // desativado nesse meio-tempo, não aplico nada que venha dele.
+    const provider = await tx.providers.findById(transaction.providerId);
+    if (!provider?.active || !provider.currencies.includes(transaction.money.currency)) {
+      return run.reject(FailureCode.ProviderNotAllowed);
+    }
     if (wallet.playerId !== transaction.playerId) {
       return run.reject(FailureCode.WalletPlayerMismatch);
     }
@@ -77,9 +84,14 @@ export class WagerProcessor {
       );
       const decision = evaluateReference(transaction, reference);
       if (decision.outcome === 'WAIT') {
-        return options.referenceWaitExhausted
-          ? run.reject(FailureCode.ReferenceNotFound)
-          : run.park(this.nextReferenceCheck(transaction, at));
+        if (!options.referenceWaitExhausted) {
+          return run.park(this.nextReferenceCheck(transaction, at));
+        }
+        // Esgotou a espera. "Nunca chegou" e "chegou mas nunca terminou" pedem
+        // ações diferentes do provedor, então o código também é diferente.
+        return run.reject(
+          reference ? FailureCode.ReferenceNotProcessed : FailureCode.ReferenceNotFound,
+        );
       }
       if (decision.outcome === 'REJECT') {
         return run.reject(decision.code);
