@@ -11,6 +11,10 @@ const schema = z.object({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(2_000),
 
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  OUTBOX_LEASE_MS: z.coerce.number().int().positive().default(30_000),
+  OUTBOX_POLL_MS: z.coerce.number().int().positive().default(250),
+
   // Espera por referência fora de ordem (ver ReferenceRetryPolicy).
   REFERENCE_RETRY_BASE_MS: z.coerce.number().int().positive().default(2_000),
   REFERENCE_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(300_000),
