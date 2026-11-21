@@ -9,8 +9,10 @@ import {
   queueNamesFrom,
   resolveQueueUrls,
 } from '../messaging/infrastructure/sqs-client';
+import { WagerConsumer } from '../messaging/infrastructure/wager-consumer';
 import type { AppConfig } from '../shared/infrastructure/config';
 import { PollingLoop } from '../shared/infrastructure/polling-loop';
+import { SubmitWagerTransaction } from '../wagering/application/submit-wager-transaction';
 import { WageringModule } from '../wagering/wagering.module';
 import { CoreModule, ORM } from './core.module';
 
@@ -48,11 +50,23 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
     if (config.LOG_LEVEL !== 'silent') console.error(`[${loop}]`, error);
   };
 
+  const consumer = new WagerConsumer(sqs, queues, app.get(SubmitWagerTransaction), {
+    consumerName: config.SQS_CONSUMER_NAME,
+    waitTimeSeconds: config.SQS_WAIT_TIME_SECONDS,
+    retryBaseSeconds: config.SQS_RETRY_BASE_SECONDS,
+  });
+
   const loops = [
     new PollingLoop('outbox-relay', async () => (await relay.runOnce(new Date())) > 0, {
       idleDelayMs: config.OUTBOX_POLL_MS,
       errorDelayMs: 1_000,
       onError: reportError('outbox-relay'),
+    }),
+    // O long polling já espera por mensagem, então a pausa ociosa é mínima.
+    new PollingLoop('wager-consumer', async () => (await consumer.pollOnce()) > 0, {
+      idleDelayMs: 10,
+      errorDelayMs: 1_000,
+      onError: reportError('wager-consumer'),
     }),
   ];
 
@@ -61,6 +75,9 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
       for (const loop of loops) loop.start();
     },
     async stop() {
+      // Primeiro aviso o consumidor (não pega mensagem nova e devolve o que
+      // ainda não começou), depois espero cada loop terminar a rodada atual.
+      consumer.stop();
       await Promise.all(loops.map((loop) => loop.stop()));
       sqs.destroy();
       await app.close();

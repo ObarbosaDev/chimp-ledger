@@ -15,6 +15,11 @@ const schema = z.object({
   OUTBOX_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(250),
 
+  SQS_CONSUMER_NAME: z.string().default('wager-consumer'),
+  // Também é o tempo máximo que o desligamento espera o receive atual voltar.
+  SQS_WAIT_TIME_SECONDS: z.coerce.number().int().min(0).max(20).default(5),
+  SQS_RETRY_BASE_SECONDS: z.coerce.number().int().min(0).default(2),
+
   // Espera por referência fora de ordem (ver ReferenceRetryPolicy).
   REFERENCE_RETRY_BASE_MS: z.coerce.number().int().positive().default(2_000),
   REFERENCE_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(300_000),

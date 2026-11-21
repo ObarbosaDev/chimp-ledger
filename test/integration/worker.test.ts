@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import { createWorker, type Worker } from '../../src/bootstrap/worker';
 import { ensureQueues } from '../../src/messaging/infrastructure/sqs-topology';
 import { loadConfig } from '../../src/shared/infrastructure/config';
@@ -18,6 +20,7 @@ describe('processo worker', () => {
         DATABASE_URL: stack.appUrl,
         SQS_ENDPOINT: stack.sqsEndpoint,
         OUTBOX_POLL_MS: '50',
+        SQS_WAIT_TIME_SECONDS: '1',
         LOG_LEVEL: 'silent',
       }),
     );
@@ -46,4 +49,55 @@ describe('processo worker', () => {
     }
     expect(published).toBe(1);
   });
+  test('consome a fila de ponta a ponta: mensagem → transação aplicada → evento publicado', async () => {
+    await stack.sql(
+      `insert into providers (id, currencies) values ('provider-a', '{BRL}') on conflict do nothing`,
+    );
+    const walletId = randomUUID();
+    const playerId = randomUUID();
+    await stack.sql(
+      `insert into wallets (id, player_id, currency, balance, version, ledger_head_hash, created_at, updated_at)
+       values ($1::uuid, $2, 'BRL', 0, 1, encode(sha256(('genesis:' || $1::text)::bytea), 'hex'), now(), now())`,
+      [walletId, playerId],
+    );
+    const ext = `tx-${randomUUID()}`;
+    await stack.sqs.send(
+      new SendMessageCommand({
+        QueueUrl: (await ensureQueues(stack.sqs, stack.queueNames)).transactions,
+        MessageGroupId: walletId,
+        MessageDeduplicationId: ext,
+        MessageBody: JSON.stringify({
+          messageId: `msg-${ext}`,
+          type: 'WagerTransactionRequested',
+          occurredAt: new Date().toISOString(),
+          data: {
+            providerId: 'provider-a',
+            externalTransactionId: ext,
+            idempotencyKey: `provider-a:${ext}`,
+            playerId,
+            walletId,
+            roundId: 'round-1',
+            gameId: 'fortune-chimp',
+            kind: 'WIN',
+            money: { amount: '15.00', currency: 'BRL' },
+          },
+        }),
+      }),
+    );
+
+    const deadline = Date.now() + 15_000;
+    let row: { balance: string; published: number } | undefined;
+    while (Date.now() < deadline) {
+      [row] = await stack.sql<{ balance: string; published: number }>(
+        `select w.balance::text as balance,
+                (select count(*)::int from outbox_messages
+                  where aggregate_id = $1::text and published_at is not null) as published
+           from wallets w where w.id = $1::uuid`,
+        [walletId],
+      );
+      if (row?.balance === '15.00' && row.published === 2) break;
+      await Bun.sleep(100);
+    }
+    expect(row).toEqual({ balance: '15.00', published: 2 });
+  }, 30_000);
 });
