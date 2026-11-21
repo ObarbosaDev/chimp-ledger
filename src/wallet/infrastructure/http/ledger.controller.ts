@@ -33,7 +33,9 @@ export class LedgerController {
   ) {}
 
   @Get('ledger')
-  @RequireScopes(Scope.WalletRead)
+  // A carteira é compartilhada entre os provedores do jogador; o ledger
+  // completo fica restrito ao backoffice.
+  @RequireScopes(Scope.LedgerRead)
   async ledger(
     @Param('walletId', new ParseUUIDPipe()) walletId: string,
     @Query(new ZodBody(ledgerQuery)) query: LedgerQuery,

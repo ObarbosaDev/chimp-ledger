@@ -112,6 +112,31 @@ describe('autenticação com Keycloak', () => {
     expect(reconcile.status).toBe(403);
   });
 
+  // A carteira é do jogador e é compartilhada por todos os provedores em que
+  // ele joga. O ledger mostra tudo, de todos; por isso é só do backoffice.
+  test('provedor não lê o ledger completo da carteira (atividade de outros provedores)', async () => {
+    const w = await openWallet();
+    await bet(w, tokens.providerA);
+
+    const asProvider = await api.request(
+      'GET',
+      `/wallets/${w.walletId}/ledger`,
+      undefined,
+      bearer(tokens.providerB),
+    );
+    expect(asProvider.status).toBe(403);
+    expect(asProvider.headers['www-authenticate']).toContain('scope="ledger:read"');
+
+    const asBackoffice = await api.request(
+      'GET',
+      `/wallets/${w.walletId}/ledger`,
+      undefined,
+      bearer(tokens.backoffice),
+    );
+    expect(asBackoffice.status).toBe(200);
+    expect(asBackoffice.body.items).toHaveLength(2);
+  });
+
   test('backoffice roda a reconciliação', async () => {
     const w = await openWallet();
     const res = await api.request(

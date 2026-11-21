@@ -22,6 +22,12 @@
       "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
     },
     {
+      "name": "ledger:read",
+      "description": "Ler o ledger completo da carteira (atividade de todos os provedores)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
       "name": "wallet:reconcile",
       "description": "Rodar a reconciliação de carteiras",
       "protocol": "openid-connect",
@@ -124,7 +130,7 @@
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "defaultClientScopes": ["wallet:read", "wallet:write", "wallet:reconcile"],
+      "defaultClientScopes": ["wallet:read", "wallet:write", "wallet:reconcile", "ledger:read"],
       "optionalClientScopes": [],
       "protocolMappers": [
         {

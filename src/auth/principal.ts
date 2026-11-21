@@ -6,6 +6,8 @@ export const Scope = {
   WalletRead: 'wallet:read',
   WalletWrite: 'wallet:write',
   WalletReconcile: 'wallet:reconcile',
+  /** Ledger completo da carteira: mostra atividade de todos os provedores. */
+  LedgerRead: 'ledger:read',
 } as const;
 
 export type Scope = (typeof Scope)[keyof typeof Scope];
