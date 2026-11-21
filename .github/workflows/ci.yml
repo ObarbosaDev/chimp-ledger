@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Um push novo no mesmo PR cancela a execução anterior: só o último commit importa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    name: Lint, tipos e testes de unidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test:unit
+
+  # Testcontainers sobe Postgres e LocalStack de verdade no runner (que já tem
+  # Docker). Nada de mock de infraestrutura aqui, igual na máquina local.
+  integracao:
+    name: Integração e concorrência (Postgres + LocalStack reais)
+    needs: qualidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - name: Baixa as imagens antes, para o tempo de download não contar nos testes
+        run: |
+          docker pull postgres:16-alpine
+          docker pull localstack/localstack:4.4
+      - run: bun run test:integration
+      - name: Concorrência (a seed da simulação aparece no log para reproduzir)
+        run: bun run test:concurrency
