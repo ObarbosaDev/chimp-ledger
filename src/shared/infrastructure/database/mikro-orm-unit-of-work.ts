@@ -1,5 +1,12 @@
 import type { MikroORM } from '@mikro-orm/postgresql';
-import { MikroOrmWagerTransactionRepository } from '../../../wagering/infrastructure/persistence/wager-transaction.repository';
+import {
+  MikroOrmInboxRepository,
+  MikroOrmOutboxRepository,
+} from '../../../messaging/infrastructure/persistence/message.repositories';
+import {
+  MikroOrmProviderRepository,
+  MikroOrmWagerTransactionRepository,
+} from '../../../wagering/infrastructure/persistence/wager-transaction.repository';
 import {
   MikroOrmLedgerRepository,
   MikroOrmWalletRepository,
@@ -27,6 +34,9 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
         wallets: new MikroOrmWalletRepository(em),
         ledger: new MikroOrmLedgerRepository(em),
         transactions: new MikroOrmWagerTransactionRepository(em),
+        providers: new MikroOrmProviderRepository(em),
+        inbox: new MikroOrmInboxRepository(em),
+        outbox: new MikroOrmOutboxRepository(em),
       });
     });
   }

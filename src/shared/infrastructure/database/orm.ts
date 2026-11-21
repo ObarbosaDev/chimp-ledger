@@ -1,4 +1,9 @@
 import { MikroORM, PostgreSqlDriver } from '@mikro-orm/postgresql';
+import {
+  InboxSchema,
+  OutboxSchema,
+} from '../../../messaging/infrastructure/persistence/message.schemas';
+import { ProviderSchema } from '../../../wagering/infrastructure/persistence/provider.schema';
 import { WagerTransactionSchema } from '../../../wagering/infrastructure/persistence/wager-transaction.schema';
 import {
   LedgerEntrySchema,
@@ -6,7 +11,14 @@ import {
 } from '../../../wallet/infrastructure/persistence/wallet.schemas';
 import type { AppConfig } from '../config';
 
-export const ENTITY_SCHEMAS = [WalletSchema, LedgerEntrySchema, WagerTransactionSchema];
+export const ENTITY_SCHEMAS = [
+  WalletSchema,
+  LedgerEntrySchema,
+  WagerTransactionSchema,
+  ProviderSchema,
+  InboxSchema,
+  OutboxSchema,
+];
 
 export async function createOrm(config: AppConfig): Promise<MikroORM> {
   return MikroORM.init({
