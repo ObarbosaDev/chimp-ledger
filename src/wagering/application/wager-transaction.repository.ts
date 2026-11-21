@@ -21,6 +21,14 @@ export interface WagerTransactionRepository {
 
   /** Já existe REFUND ou ROLLBACK processado apontando para essa transação? */
   hasProcessedReversal(referenceTransactionId: string): Promise<boolean>;
+
+  /** Pendentes de referência cuja próxima verificação já venceu, mais antigas primeiro. */
+  findDuePendingReferences(now: Date, limit: number): Promise<PendingReferenceRef[]>;
+}
+
+export interface PendingReferenceRef {
+  id: string;
+  walletId: string;
 }
 
 export interface ProviderInfo {

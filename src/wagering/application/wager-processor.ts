@@ -16,7 +16,7 @@ import type { ReferenceRetryPolicy } from '../domain/reference-retry-policy';
 import {
   type WagerTransaction,
   WagerTransactionKind,
-  type WagerTransactionStatus,
+  WagerTransactionStatus,
 } from '../domain/wager-transaction';
 
 export interface SubmitWagerResult {
@@ -200,11 +200,17 @@ class Run {
     return resultOf(this.transaction, this.wallet, false);
   }
 
-  /** Referência ainda não chegou: estaciona e o worker tenta de novo depois. */
+  /**
+   * Referência ainda não chegou: estaciona e o worker tenta de novo depois.
+   * O evento sai só na primeira vez; reagendar não é novidade para ninguém.
+   */
   async park(nextCheckAt: Date): Promise<SubmitWagerResult> {
+    const firstTime = this.transaction.status !== WagerTransactionStatus.PendingReference;
     this.transaction.markPendingReference(nextCheckAt);
     await this.tx.transactions.update(this.transaction);
-    await this.publish([WagerTransactionPendingReference.from(this.transaction, this.events())]);
+    if (firstTime) {
+      await this.publish([WagerTransactionPendingReference.from(this.transaction, this.events())]);
+    }
     return resultOf(this.transaction, this.wallet, false);
   }
 

@@ -1,5 +1,6 @@
 import type { EntityManager } from '@mikro-orm/postgresql';
 import type {
+  PendingReferenceRef,
   ProviderInfo,
   ProviderRepository,
   WagerTransactionRepository,
@@ -64,6 +65,20 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
       kind: { $in: ['REFUND', 'ROLLBACK'] },
     });
     return count > 0;
+  }
+
+  async findDuePendingReferences(now: Date, limit: number): Promise<PendingReferenceRef[]> {
+    const rows = await this.em.find(
+      WagerTransactionSchema,
+      { status: 'PENDING_REFERENCE', nextReferenceCheckAt: { $lte: now } },
+      {
+        fields: ['id', 'walletId'],
+        orderBy: { nextReferenceCheckAt: 'asc' },
+        limit,
+        disableIdentityMap: true,
+      },
+    );
+    return rows.map((r) => ({ id: r.id, walletId: r.walletId }));
   }
 
   // Leitura sempre fresca: o identity map desta transação pode ter uma
