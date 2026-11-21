@@ -215,7 +215,8 @@ export class WagerTransaction {
     this._nextReferenceCheckAt = nextCheckAt;
   }
 
-  reject(input: { code: FailureCode; at: Date; resultBalance: Money }): void {
+  /** Sem `resultBalance` quando o saldo não pode ser mostrado (carteira de outro jogador). */
+  reject(input: { code: FailureCode; at: Date; resultBalance?: Money }): void {
     this.assertNotTerminal('REJECTED');
     this._status = WagerTransactionStatus.Rejected;
     this._failureCode = input.code;
@@ -275,7 +276,7 @@ export class WagerTransaction {
     }
   }
 
-  private finish(at: Date, resultBalance: Money): void {
+  private finish(at: Date, resultBalance: Money | undefined): void {
     this._processedAt = at;
     this._resultBalance = resultBalance;
     this._nextReferenceCheckAt = undefined;

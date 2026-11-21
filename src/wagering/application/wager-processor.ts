@@ -22,7 +22,8 @@ import {
 export interface SubmitWagerResult {
   transactionId: string;
   status: WagerTransactionStatus;
-  balance: MoneyProps;
+  /** Ausente quando a transação foi recusada por a carteira não ser do jogador. */
+  balance?: MoneyProps;
   failureCode?: FailureCode;
   idempotentReplay: boolean;
 }
@@ -65,12 +66,14 @@ export class WagerProcessor {
     // A submissão já recusa provedor bloqueado antes de gravar qualquer coisa,
     // mas uma transação pendente pode esperar até uma hora. Se o provedor foi
     // desativado nesse meio-tempo, não aplico nada que venha dele.
+    // Dono primeiro: antes de confirmar que a carteira é do jogador, nada
+    // sobre ela (nem o saldo) pode aparecer na resposta ou no evento.
+    if (wallet.playerId !== transaction.playerId) {
+      return run.reject(FailureCode.WalletPlayerMismatch, { revealBalance: false });
+    }
     const provider = await tx.providers.findById(transaction.providerId);
     if (!provider?.active || !provider.currencies.includes(transaction.money.currency)) {
       return run.reject(FailureCode.ProviderNotAllowed);
-    }
-    if (wallet.playerId !== transaction.playerId) {
-      return run.reject(FailureCode.WalletPlayerMismatch);
     }
     if (wallet.currency !== transaction.money.currency) {
       return run.reject(FailureCode.CurrencyMismatch);
@@ -96,15 +99,12 @@ export class WagerProcessor {
       if (decision.outcome === 'REJECT') {
         return run.reject(decision.code);
       }
-      // Só checo "já revertida" depois de saber que a referência é válida.
-      // Como a referência é da mesma carteira, o lock que eu seguro já
-      // impede outra reversão concorrente; o índice único é a rede de baixo.
-      if (
-        transaction.isReversal() &&
-        reference &&
-        (await tx.transactions.hasProcessedReversal(reference.id))
-      ) {
-        return run.reject(FailureCode.AlreadyReversed);
+      // Daqui em diante a referência é válida. As duas checagens abaixo olham
+      // o que já aconteceu com ela; como ela é da mesma carteira, o lock que
+      // eu seguro impede que isso mude no meio do caminho.
+      if (reference) {
+        const conflict = await this.lifecycleConflict(tx, reference);
+        if (conflict) return run.reject(conflict);
       }
     }
 
@@ -162,6 +162,29 @@ export class WagerProcessor {
     return resultOf(transaction, wallet, false);
   }
 
+  /**
+   * Regras de ciclo de vida da referência:
+   * - nada se apoia numa transação que já foi revertida (REFUND/ROLLBACK);
+   * - uma BET liquidada (WIN ou LOSS ainda válido) não aceita outra
+   *   liquidação nem reembolso. Se o WIN for desfeito por ROLLBACK, a BET
+   *   volta a ficar em aberto.
+   */
+  private async lifecycleConflict(
+    tx: TransactionScope,
+    reference: WagerTransaction,
+  ): Promise<FailureCode | undefined> {
+    if (await tx.transactions.hasProcessedReversal(reference.id)) {
+      return FailureCode.AlreadyReversed;
+    }
+    if (
+      reference.kind === WagerTransactionKind.Bet &&
+      (await tx.transactions.isSettled(reference.id))
+    ) {
+      return FailureCode.BetAlreadySettled;
+    }
+    return undefined;
+  }
+
   private nextReferenceCheck(transaction: WagerTransaction, at: Date): Date {
     const attempt = transaction.referenceAttempts + 1;
     return new Date(at.getTime() + this.referenceRetry.delayFor(attempt));
@@ -189,7 +212,11 @@ export function resultOf(
   return {
     transactionId: transaction.id,
     status: transaction.status,
-    balance: (transaction.resultBalance ?? wallet.balance).toJSON(),
+    // Transação final mostra o saldo guardado naquele momento (ou nenhum, se
+    // ele não podia ser mostrado). Só a pendente usa o saldo atual.
+    balance: transaction.isTerminal()
+      ? transaction.resultBalance?.toJSON()
+      : wallet.balance.toJSON(),
     failureCode: transaction.failureCode,
     idempotentReplay,
   };
@@ -205,8 +232,15 @@ class Run {
     readonly at: Date,
   ) {}
 
-  async reject(code: FailureCode): Promise<SubmitWagerResult> {
-    this.transaction.reject({ code, at: this.at, resultBalance: this.wallet.balance });
+  async reject(
+    code: FailureCode,
+    { revealBalance = true }: { revealBalance?: boolean } = {},
+  ): Promise<SubmitWagerResult> {
+    this.transaction.reject({
+      code,
+      at: this.at,
+      resultBalance: revealBalance ? this.wallet.balance : undefined,
+    });
     await this.tx.transactions.update(this.transaction);
     await this.publish([WagerTransactionRejected.from(this.transaction, this.events())]);
     return resultOf(this.transaction, this.wallet, false);

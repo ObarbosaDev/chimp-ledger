@@ -15,6 +15,7 @@ export enum FailureCode {
   ReferenceMismatch = 'REFERENCE_MISMATCH',
   InvalidReferenceKind = 'INVALID_REFERENCE_KIND',
   AlreadyReversed = 'ALREADY_REVERSED',
+  BetAlreadySettled = 'BET_ALREADY_SETTLED',
   AmountMismatch = 'AMOUNT_MISMATCH',
   CurrencyMismatch = 'CURRENCY_MISMATCH',
   WalletNotFound = 'WALLET_NOT_FOUND',
@@ -53,6 +54,10 @@ export const FAILURE_CODE_META: Record<FailureCode, { action: FailureAction; mea
   [FailureCode.AlreadyReversed]: {
     action: 'GIVE_UP',
     meaning: 'A referência já foi revertida antes.',
+  },
+  [FailureCode.BetAlreadySettled]: {
+    action: 'GIVE_UP',
+    meaning: 'A aposta já foi liquidada (WIN ou LOSS) e não aceita outra liquidação nem reembolso.',
   },
   [FailureCode.AmountMismatch]: {
     action: 'FIX_PAYLOAD',

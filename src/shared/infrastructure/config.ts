@@ -11,7 +11,7 @@ const schema = z.object({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(2_000),
 
-  OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  OUTBOX_AGGREGATES_PER_ROUND: z.coerce.number().int().positive().default(50),
   OUTBOX_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(250),
 
@@ -25,8 +25,8 @@ const schema = z.object({
   REFERENCE_RETRY_MAX_DELAY_MS: z.coerce.number().int().positive().default(300_000),
   REFERENCE_RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   REFERENCE_RETRY_TTL_MS: z.coerce.number().int().positive().default(3_600_000),
-  REFERENCE_SWEEP_POLL_MS: z.coerce.number().int().positive().default(1_000),
-  REFERENCE_SWEEP_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  REFERENCE_REPROCESS_POLL_MS: z.coerce.number().int().positive().default(1_000),
+  REFERENCE_REPROCESS_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().default('test'),

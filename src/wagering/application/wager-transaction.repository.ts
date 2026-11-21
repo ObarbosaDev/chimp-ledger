@@ -22,6 +22,9 @@ export interface WagerTransactionRepository {
   /** Já existe REFUND ou ROLLBACK processado apontando para essa transação? */
   hasProcessedReversal(referenceTransactionId: string): Promise<boolean>;
 
+  /** A BET tem WIN ou LOSS processado que não foi desfeito por ROLLBACK? */
+  isSettled(betTransactionId: string): Promise<boolean>;
+
   /** Pendentes de referência cuja próxima verificação já venceu, mais antigas primeiro. */
   findDuePendingReferences(now: Date, limit: number): Promise<PendingReferenceRef[]>;
 }

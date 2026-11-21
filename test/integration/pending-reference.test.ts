@@ -35,7 +35,7 @@ describe('worker de referências pendentes', () => {
 
   const fixedClock = (at: Date): Clock => ({ now: () => at });
 
-  const sweeper = (
+  const reprocessor = (
     opts: {
       clock?: Clock;
       lockTimeoutMs?: number;
@@ -51,7 +51,7 @@ describe('worker de referências pendentes', () => {
     );
 
   // Rodada em que o relógio "de processamento" é o mesmo instante do lote.
-  const sweep = (at: Date) => sweeper({ clock: fixedClock(at) }).runOnce(at);
+  const reprocessAt = (at: Date) => reprocessor({ clock: fixedClock(at) }).runOnce(at);
 
   const later = (ms: number) => new Date(Date.now() + ms);
 
@@ -128,7 +128,7 @@ describe('worker de referências pendentes', () => {
     const { w, betExt, reversalId } = await reversalBeforeBet();
     await submit(w, { externalTransactionId: betExt });
 
-    expect(await sweep(later(3_000))).toBe(1);
+    expect(await reprocessAt(later(3_000))).toBe(1);
 
     expect((await transaction(reversalId))?.status).toBe('PROCESSED');
     const wallet = await api.request('GET', `/wallets/${w.walletId}`);
@@ -138,7 +138,7 @@ describe('worker de referências pendentes', () => {
 
   test('não mexe no que ainda não venceu', async () => {
     const { reversalId } = await reversalBeforeBet();
-    expect(await sweep(new Date())).toBe(0);
+    expect(await reprocessAt(new Date())).toBe(0);
     expect((await transaction(reversalId))?.reference_attempts).toBe(1);
   });
 
@@ -146,7 +146,7 @@ describe('worker de referências pendentes', () => {
     const { w, reversalId } = await reversalBeforeBet();
     const now = later(3_000);
 
-    await sweep(now);
+    await reprocessAt(now);
 
     const t = await transaction(reversalId);
     expect(t?.status).toBe('PENDING_REFERENCE');
@@ -161,7 +161,7 @@ describe('worker de referências pendentes', () => {
       reversalId,
     ]);
 
-    await sweep(later(3_000));
+    await reprocessAt(later(3_000));
 
     expect(await transaction(reversalId)).toMatchObject({
       status: 'REJECTED',
@@ -172,7 +172,7 @@ describe('worker de referências pendentes', () => {
 
   test('passou do TTL de 1 hora: rejeita mesmo com poucas tentativas', async () => {
     const { reversalId } = await reversalBeforeBet();
-    await sweep(later(3_600_000 + 1_000));
+    await reprocessAt(later(3_600_000 + 1_000));
     expect((await transaction(reversalId))?.failure_code).toBe('REFERENCE_NOT_FOUND');
   });
 
@@ -184,7 +184,7 @@ describe('worker de referências pendentes', () => {
     });
     expect(res.body.failureCode).toBe('INSUFFICIENT_FUNDS');
 
-    await sweep(later(3_000));
+    await reprocessAt(later(3_000));
     expect((await transaction(reversalId))?.failure_code).toBe('REFERENCE_NOT_PROCESSED');
   });
 
@@ -199,7 +199,7 @@ describe('worker de referências pendentes', () => {
       [reversalId],
     );
 
-    const [a, b] = await Promise.all([sweep(later(3_000)), sweep(later(3_000))]);
+    const [a, b] = await Promise.all([reprocessAt(later(3_000)), reprocessAt(later(3_000))]);
 
     expect(a + b).toBe(1);
     const [entries] = await api.stack.sql<{ n: number }>(
@@ -210,7 +210,7 @@ describe('worker de referências pendentes', () => {
     await assertLedgerInvariant(api.stack, w.walletId);
   });
 
-  // ---- casos de borda do varredor -----------------------------------------
+  // ---- casos de borda do reprocessamento ----------------------------------
 
   /** Deixa só as pendências citadas vencidas, para a rodada medir só elas. */
   const onlyDue = (ids: string[]) =>
@@ -235,7 +235,7 @@ describe('worker de referências pendentes', () => {
     const errors: string[] = [];
     try {
       const at = later(3_000);
-      const handled = await sweeper({
+      const handled = await reprocessor({
         clock: fixedClock(at),
         lockTimeoutMs: 300,
         onError: (id) => errors.push(id),
@@ -258,7 +258,7 @@ describe('worker de referências pendentes', () => {
     const batchStartedAt = later(3_000);
     const processedAt = later(60_000);
 
-    await sweeper({ clock: fixedClock(processedAt) }).runOnce(batchStartedAt);
+    await reprocessor({ clock: fixedClock(processedAt) }).runOnce(batchStartedAt);
 
     const [row] = await api.stack.sql<{ processed_at: Date }>(
       'select processed_at from wager_transactions where id = $1',
@@ -274,7 +274,7 @@ describe('worker de referências pendentes', () => {
     await api.stack.sql(`update providers set active = false where id = 'provider-b'`);
 
     try {
-      await sweep(later(3_000));
+      await reprocessAt(later(3_000));
       expect(await transaction(reversalId)).toMatchObject({
         status: 'REJECTED',
         failure_code: 'PROVIDER_NOT_ALLOWED',
@@ -301,12 +301,12 @@ describe('worker de referências pendentes', () => {
       rollbackId,
     ]);
 
-    await sweep(later(3_000));
+    await reprocessAt(later(3_000));
 
     expect((await transaction(rollbackId))?.failure_code).toBe('REFERENCE_NOT_PROCESSED');
   });
 
-  test('eventos gerados pelo varredor mantêm a correlação da requisição original', async () => {
+  test('eventos gerados no reprocessamento mantêm a correlação da requisição original', async () => {
     const w = await openWallet();
     const betExt = `bet-${randomUUID()}`;
     const correlationId = `corr-${randomUUID()}`;
@@ -318,7 +318,7 @@ describe('worker de referências pendentes', () => {
     await submit(w, { externalTransactionId: betExt });
     await onlyDue([res.body.transactionId]);
 
-    await sweep(later(3_000));
+    await reprocessAt(later(3_000));
 
     const [event] = await api.stack.sql<{ correlation: string }>(
       `select payload->>'correlationId' as correlation from outbox_messages

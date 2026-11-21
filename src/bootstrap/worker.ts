@@ -45,7 +45,7 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
   const queues = await resolveQueueUrls(sqs, queueNamesFrom(config));
 
   const relay = new OutboxRelay(orm, new SqsEventPublisher(sqs, queues.events), {
-    batchSize: config.OUTBOX_BATCH_SIZE,
+    aggregatesPerRound: config.OUTBOX_AGGREGATES_PER_ROUND,
     leaseMs: config.OUTBOX_LEASE_MS,
   });
 
@@ -65,7 +65,7 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
     app.get(ReferenceRetryPolicy),
     app.get(CLOCK),
     {
-      batchSize: config.REFERENCE_SWEEP_BATCH_SIZE,
+      batchSize: config.REFERENCE_REPROCESS_BATCH_SIZE,
       onError: (id, error) => reportError(`pending-references:${id}`)(error),
     },
   );
@@ -86,7 +86,7 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
       'pending-references',
       async () => (await pendingReferences.runOnce(new Date())) > 0,
       {
-        idleDelayMs: config.REFERENCE_SWEEP_POLL_MS,
+        idleDelayMs: config.REFERENCE_REPROCESS_POLL_MS,
         errorDelayMs: 1_000,
         onError: reportError('pending-references'),
       },

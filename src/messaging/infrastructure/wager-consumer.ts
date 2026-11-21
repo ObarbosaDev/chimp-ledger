@@ -9,7 +9,7 @@ import {
 import { z } from 'zod';
 import type { SubmitWagerTransaction } from '../../wagering/application/submit-wager-transaction';
 import { idempotencyKeyHeader, wagerOperation } from '../../wagering/infrastructure/wager-contract';
-import { classifyFailure, type FailureKind } from './failure-classifier';
+import { classifyFailure, type FailureKind, failureReason } from './failure-classifier';
 import type { QueueUrls } from './sqs-topology';
 
 export interface WagerConsumerOptions {
@@ -69,12 +69,27 @@ export class WagerConsumer {
       const group = m.Attributes?.MessageGroupId ?? 'sem-grupo';
       byGroup.set(group, [...(byGroup.get(group) ?? []), m]);
     }
-    await Promise.all(
-      [...byGroup.values()].map(async (group) => {
-        for (const m of group) await this.handle(m);
-      }),
-    );
+    await Promise.all([...byGroup.values()].map((group) => this.handleGroup(group)));
     return messages.length;
+  }
+
+  /**
+   * Mensagens de um grupo (uma carteira) em sequência. Se uma falha de forma
+   * passageira, as seguintes não podem passar na frente: devolvo todas para
+   * a fila. O SQS FIFO não entrega nada do grupo enquanto a que falhou
+   * estiver em voo, então a ordem original se mantém na reentrega.
+   */
+  private async handleGroup(group: Message[]): Promise<void> {
+    for (const [index, message] of group.entries()) {
+      const outcome = await this.handle(message);
+      if (outcome === 'retry-later') {
+        for (const pending of group.slice(index + 1)) {
+          await this.setVisibility(pending, 0);
+          this.report('released');
+        }
+        return;
+      }
+    }
   }
 
   /** Pede para parar; quem espera o fim da rodada é o PollingLoop. */
@@ -94,7 +109,7 @@ export class WagerConsumer {
     return Messages;
   }
 
-  private async handle(message: Message): Promise<void> {
+  private async handle(message: Message): Promise<MessageOutcome> {
     if (this.stopping) {
       await this.setVisibility(message, 0);
       return this.report('released');
@@ -111,24 +126,25 @@ export class WagerConsumer {
         },
       );
       await this.delete(message);
-      this.report('acked');
+      return this.report('acked');
     } catch (error) {
       const kind = classifyFailure(error);
       if (kind === 'business') {
         await this.delete(message);
-        this.report('acked', kind);
-      } else if (kind === 'permanent') {
-        await this.deadLetter(message, error);
-        this.report('dead-lettered', kind);
-      } else {
-        const deliveries = Number(message.Attributes?.ApproximateReceiveCount ?? 1);
-        const delay = Math.min(
-          this.options.retryBaseSeconds * 2 ** (deliveries - 1),
-          MAX_VISIBILITY_SECONDS,
-        );
-        await this.setVisibility(message, delay);
-        this.report('retry-later', kind);
+        return this.report('acked', kind);
       }
+      if (kind === 'permanent') {
+        await this.deadLetter(message, error);
+        return this.report('dead-lettered', kind);
+      }
+      // Passageiro: volta para a fila com backoff exponencial.
+      const deliveries = Number(message.Attributes?.ApproximateReceiveCount ?? 1);
+      const delay = Math.min(
+        this.options.retryBaseSeconds * 2 ** (deliveries - 1),
+        MAX_VISIBILITY_SECONDS,
+      );
+      await this.setVisibility(message, delay);
+      return this.report('retry-later', kind);
     }
   }
 
@@ -144,7 +160,7 @@ export class WagerConsumer {
         MessageAttributes: {
           failureReason: {
             DataType: 'String',
-            StringValue: (error instanceof Error ? error.message : String(error)).slice(0, 256),
+            StringValue: failureReason(error),
           },
         },
       }),
@@ -171,7 +187,8 @@ export class WagerConsumer {
     );
   }
 
-  private report(outcome: MessageOutcome, failure?: FailureKind): void {
+  private report(outcome: MessageOutcome, failure?: FailureKind): MessageOutcome {
     this.onOutcome?.(outcome, failure);
+    return outcome;
   }
 }

@@ -124,6 +124,8 @@ O Postgres sobe com dois usuários: `chimp_migrator`, dono das tabelas e usado s
 
 Para derrubar tudo e apagar os dados: `docker compose down -v`.
 
+**Fora do Docker:** a migração cria o papel `chimp_app` sem login e só concede as permissões. No compose, quem dá login e senha é o `docker/postgres/01-roles.sql`, executado no primeiro boot do Postgres. Em outro servidor, crie o papel antes de migrar (`create role chimp_app login password '...'`) e aponte `DATABASE_URL` para ele.
+
 ---
 
 ## API
@@ -165,7 +167,8 @@ Cada `failureCode` vem com uma ação recomendada (`src/wagering/domain/failure-
 |---|---|
 | `INSUFFICIENT_FUNDS` | desistir |
 | `NEGATIVE_BALANCE_PREVENTED` | desistir (reversão que deixaria saldo negativo; pede análise) |
-| `ALREADY_REVERSED` | desistir |
+| `ALREADY_REVERSED` | desistir (a referência já foi revertida) |
+| `BET_ALREADY_SETTLED` | desistir (a aposta já foi liquidada com WIN ou LOSS) |
 | `REFERENCE_NOT_PROCESSED` | desistir |
 | `REFERENCE_NOT_FOUND` · `REFERENCE_MISMATCH` · `INVALID_REFERENCE_KIND` · `AMOUNT_MISMATCH` · `CURRENCY_MISMATCH` · `WALLET_PLAYER_MISMATCH` | corrigir o payload |
 
@@ -235,3 +238,9 @@ Algumas coisas que só apareceram na hora de rodar contra infraestrutura de verd
 - **Uma função de trigger para duas tabelas.** A checagem "saldo bate com o ledger" dispara pela carteira e pelo lançamento, e `NEW` tem campos diferentes em cada tabela. Resolvi olhando `TG_TABLE_NAME`.
 - **CRLF quebra script de container.** No Windows o Git converte quebra de linha por padrão; `.gitattributes` fixa LF para o repositório inteiro.
 - **`emitDecoratorMetadata` no Bun.** Para não depender de como o runtime emite metadata, todo construtor do Nest usa `@Inject` explícito.
+
+---
+
+## Autor
+
+**Matheus Barbosa** · [github.com/ObarbosaDev](https://github.com/ObarbosaDev)

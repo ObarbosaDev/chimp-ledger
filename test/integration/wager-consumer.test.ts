@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   GetQueueAttributesCommand,
   PurgeQueueCommand,
+  ReceiveMessageCommand,
   SendMessageCommand,
 } from '@aws-sdk/client-sqs';
 import { MikroORM, PostgreSqlDriver } from '@mikro-orm/postgresql';
@@ -199,6 +200,34 @@ describe('consumidor SQS de transações', () => {
     expect(await approxCount(queues.transactionsDlq)).toBe(1);
   });
 
+  // Esses dois casos não chegam a gravar transação (a carteira ou o provedor
+  // nem existem para a FK). Confirmar e apagar seria perder a operação sem
+  // deixar rastro; na DLQ ela fica visível e pode ser reenviada depois.
+  test.each([
+    ['carteira inexistente', { walletId: randomUUID() }, /WALLET_NOT_FOUND|não encontrada/],
+    [
+      'provedor desconhecido',
+      { providerId: 'provider-zzz' },
+      /PROVIDER_NOT_ALLOWED|não pode operar/,
+    ],
+  ])('%s vai para a DLQ com o motivo', async (_n, over, reason) => {
+    const w = await wallet();
+    await send(message(w, over));
+
+    await consumer().pollOnce();
+
+    expect(await approxCount(queues.transactions)).toBe(0);
+    const { Messages = [] } = await stack.sqs.send(
+      new ReceiveMessageCommand({
+        QueueUrl: queues.transactionsDlq,
+        MessageAttributeNames: ['All'],
+        WaitTimeSeconds: 1,
+      }),
+    );
+    expect(Messages).toHaveLength(1);
+    expect(Messages[0]?.MessageAttributes?.failureReason?.StringValue).toMatch(reason);
+  });
+
   test('falha transitória não confirma: reentrega até dar certo', async () => {
     const w = await wallet('100.00');
     const msg = message(w);
@@ -306,5 +335,38 @@ describe('consumidor SQS de transações', () => {
     // Se o REFUND tivesse passado na frente, ele ficaria PENDING_REFERENCE.
     expect((await transactionStatus(refund.data.idempotencyKey))?.status).toBe('PROCESSED');
     expect(await approxCount(queues.transactions)).toBe(0);
+  });
+
+  test('falha passageira na primeira mensagem do grupo segura as seguintes', async () => {
+    const w = await wallet('150.00');
+    const first = message(w, { money: { amount: '100.00', currency: 'BRL' } });
+    const second = message(w, { money: { amount: '100.00', currency: 'BRL' } });
+    await send(first, w.walletId);
+    await send(second, w.walletId);
+
+    // Caso de uso real, com uma falha passageira injetada só na 1ª tentativa
+    // da primeira aposta (o mesmo efeito de um lock_timeout).
+    let failedOnce = false;
+    const flaky = {
+      execute: (...args: Parameters<SubmitWagerTransaction['execute']>) => {
+        if (args[0].idempotencyKey === first.data.idempotencyKey && !failedOnce) {
+          failedOnce = true;
+          return Promise.reject(new Error('falha passageira simulada'));
+        }
+        return submit.execute(...args);
+      },
+    } as SubmitWagerTransaction;
+
+    const c = consumer(flaky);
+    await c.pollOnce();
+    expect(await transactionStatus(second.data.idempotencyKey)).toBeUndefined();
+
+    for (let i = 0; i < 6 && (await approxCount(queues.transactions)) > 0; i++) await c.pollOnce();
+
+    expect((await transactionStatus(first.data.idempotencyKey))?.status).toBe('PROCESSED');
+    expect(await transactionStatus(second.data.idempotencyKey)).toEqual({
+      status: 'REJECTED',
+      failure_code: 'INSUFFICIENT_FUNDS',
+    });
   });
 });

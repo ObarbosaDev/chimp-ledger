@@ -4,8 +4,9 @@ import { OutboxMessage } from '../domain/outbox-message';
 import type { EventPublisher, PublishableEvent } from './event-publisher';
 
 export interface OutboxRelayOptions {
-  batchSize: number;
-  /** Quanto tempo um lote fica reservado para quem o pegou. */
+  /** Quantas carteiras (agregados) cada rodada reivindica. */
+  aggregatesPerRound: number;
+  /** Quanto tempo os eventos reivindicados ficam reservados para quem os pegou. */
   leaseMs: number;
 }
 
@@ -18,19 +19,30 @@ interface ClaimedRow {
   attempts: number;
 }
 
+interface AggregateOutcome {
+  published: string[];
+  failed?: ClaimedRow;
+  released: string[];
+}
+
 /**
- * Pega eventos da outbox e publica. Foi desenhado para rodar em várias
- * instâncias ao mesmo tempo:
+ * Publica os eventos da outbox mantendo a ordem por carteira, mesmo com
+ * várias instâncias rodando ao mesmo tempo.
  *
- * 1. reserva um lote com lease (UPDATE ... WHERE id IN (SELECT ... FOR
- *    UPDATE SKIP LOCKED)) numa transação curta — duas instâncias nunca
- *    pegam o mesmo evento, e nenhuma fica parada esperando a outra;
- * 2. publica FORA da transação, sem segurar conexão durante a chamada de rede;
- * 3. marca como publicado ou agenda nova tentativa.
+ * A unidade de trabalho é a carteira (agregado), não o evento:
  *
- * Se o processo morrer entre 2 e 3, o lease expira e outra instância
- * publica de novo. Isso gera duplicata, e duplicata é aceitável: o evento
- * carrega eventId e o consumidor descarta repetido. O que não pode é perder.
+ * 1. numa transação curta, travo com SKIP LOCKED o evento mais antigo
+ *    pendente de cada carteira e reservo (lease) todos os pendentes dela.
+ *    Outra instância não consegue pegar a mesma carteira até o lease vencer;
+ * 2. fora da transação, publico os eventos de cada carteira um por um, na
+ *    ordem em que aconteceram. Carteiras diferentes vão em paralelo;
+ * 3. na primeira falha de uma carteira eu paro ali: o evento que falhou
+ *    ganha nova tentativa com backoff e os seguintes só são liberados, sem
+ *    contar tentativa. Assim nenhum evento passa na frente do anterior.
+ *
+ * Se o processo morrer no meio, o lease vence e outra instância retoma a
+ * carteira do ponto em que parou. Pode haver republicação do último evento,
+ * e isso é aceitável: o consumidor deduplica por eventId.
  */
 export class OutboxRelay {
   constructor(
@@ -44,60 +56,110 @@ export class OutboxRelay {
     const claimed = await this.claim(now);
     if (claimed.length === 0) return 0;
 
-    const outcome = await this.publisher.publish(claimed.map(toPublishable));
-    await this.settle(claimed, outcome.published, now);
-    return outcome.published.length;
+    const outcomes = await Promise.all(
+      groupByAggregate(claimed).map((events) => this.publishInOrder(events)),
+    );
+    await this.settle(outcomes, now);
+    return outcomes.reduce((sum, o) => sum + o.published.length, 0);
   }
 
   private async claim(now: Date): Promise<ClaimedRow[]> {
     const leaseUntil = new Date(now.getTime() + this.options.leaseMs);
-    return this.orm.em.fork().transactional((em) =>
+    const rows = await this.orm.em.fork().transactional((em) =>
       em.execute<ClaimedRow[]>(
-        `update outbox_messages o
+        `with heads as (
+           select distinct on (aggregate_id) id
+             from outbox_messages
+            where published_at is null
+            order by aggregate_id, occurred_at, id
+         ),
+         claimable as (
+           select o.aggregate_id
+             from outbox_messages o
+             join heads h on h.id = o.id
+            where o.published_at is null
+              and coalesce(o.next_attempt_at, o.occurred_at) <= ?
+              and (o.lease_until is null or o.lease_until <= ?)
+            order by o.occurred_at
+            limit ?
+              for update of o skip locked
+         )
+         update outbox_messages m
             set lease_until = ?
-          where o.id in (
-                select id
-                  from outbox_messages
-                 where published_at is null
-                   and coalesce(next_attempt_at, occurred_at) <= ?
-                   and (lease_until is null or lease_until <= ?)
-                 order by occurred_at
-                 limit ?
-                   for update skip locked)
-         returning o.id, o.aggregate_id, o.event_type, o.payload, o.occurred_at, o.attempts`,
-        [leaseUntil, now, now, this.options.batchSize],
+          where m.published_at is null
+            and m.aggregate_id in (select aggregate_id from claimable)
+        returning m.id, m.aggregate_id, m.event_type, m.payload, m.occurred_at, m.attempts`,
+        [now, now, this.options.aggregatesPerRound, leaseUntil],
       ),
     );
+    // Em SQL cru o driver devolve timestamptz como texto.
+    return rows.map((row) => ({ ...row, occurred_at: new Date(row.occurred_at) }));
   }
 
-  private async settle(claimed: ClaimedRow[], publishedIds: string[], now: Date): Promise<void> {
-    const published = new Set(publishedIds);
+  private async publishInOrder(events: ClaimedRow[]): Promise<AggregateOutcome> {
+    const published: string[] = [];
+    for (const [index, event] of events.entries()) {
+      const outcome = await this.publisher.publish([toPublishable(event)]);
+      if (!outcome.published.includes(event.id)) {
+        return {
+          published,
+          failed: event,
+          released: events.slice(index + 1).map((e) => e.id),
+        };
+      }
+      published.push(event.id);
+    }
+    return { published, released: [] };
+  }
+
+  private async settle(outcomes: AggregateOutcome[], now: Date): Promise<void> {
+    const published = outcomes.flatMap((o) => o.published);
+    const released = outcomes.flatMap((o) => o.released);
+
     await this.orm.em.fork().transactional(async (em) => {
-      if (published.size > 0) {
+      // o driver expande o array do `?` em lista: in ('a', 'b', ...)
+      if (published.length > 0) {
         await em.execute(
-          // o driver expande o array do `?` em lista: in ('a', 'b', ...)
           'update outbox_messages set published_at = ?, lease_until = null where id in (?)',
-          [now, [...published]],
+          [now, published],
         );
       }
-      for (const row of claimed.filter((r) => !published.has(r.id))) {
+      if (released.length > 0) {
+        await em.execute('update outbox_messages set lease_until = null where id in (?)', [
+          released,
+        ]);
+      }
+      for (const { failed } of outcomes) {
+        if (!failed) continue;
         // A conta do backoff fica no domínio (OutboxMessage.scheduleRetry).
         const message = OutboxMessage.rehydrate({
-          id: row.id,
-          aggregateId: row.aggregate_id,
-          eventType: row.event_type,
-          payload: row.payload,
-          occurredAt: row.occurred_at,
-          attempts: row.attempts,
+          id: failed.id,
+          aggregateId: failed.aggregate_id,
+          eventType: failed.event_type,
+          payload: failed.payload,
+          occurredAt: failed.occurred_at,
+          attempts: failed.attempts,
         });
         message.scheduleRetry(now);
         await em.execute(
           'update outbox_messages set attempts = ?, next_attempt_at = ?, lease_until = null where id = ?',
-          [message.attempts, message.nextAttemptAt, row.id],
+          [message.attempts, message.nextAttemptAt, failed.id],
         );
       }
     });
   }
+}
+
+/** Agrupa por carteira, cada grupo na ordem em que os eventos aconteceram. */
+function groupByAggregate(rows: ClaimedRow[]): ClaimedRow[][] {
+  const sorted = [...rows].sort(
+    (a, b) => a.occurred_at.getTime() - b.occurred_at.getTime() || a.id.localeCompare(b.id),
+  );
+  const groups = new Map<string, ClaimedRow[]>();
+  for (const row of sorted) {
+    groups.set(row.aggregate_id, [...(groups.get(row.aggregate_id) ?? []), row]);
+  }
+  return [...groups.values()];
 }
 
 function toPublishable(row: ClaimedRow): PublishableEvent {

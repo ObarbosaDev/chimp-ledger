@@ -7,7 +7,7 @@ export interface PollingLoopOptions {
 }
 
 /**
- * Loop de trabalho em segundo plano (relay da outbox, varredor de
+ * Loop de trabalho em segundo plano (relay da outbox, reprocessamento de
  * pendentes, consumidor). A rodada devolve `true` se fez alguma coisa:
  * nesse caso roda de novo na hora, porque provavelmente tem mais. Se não
  * fez nada, descansa um pouco.
