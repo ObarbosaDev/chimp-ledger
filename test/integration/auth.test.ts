@@ -137,6 +137,19 @@ describe('autenticação com Keycloak', () => {
     expect(asBackoffice.body.items).toHaveLength(2);
   });
 
+  test('backoffice lê transação de qualquer provedor pelo escopo explícito', async () => {
+    const w = await openWallet();
+    const created = await bet(w, tokens.providerA);
+    const byId = await api.request(
+      'GET',
+      `/wagering/transactions/${created.body.transactionId}`,
+      undefined,
+      bearer(tokens.backoffice),
+    );
+    expect(byId.status).toBe(200);
+    expect(byId.body.providerId).toBe('provider-a');
+  });
+
   test('backoffice roda a reconciliação', async () => {
     const w = await openWallet();
     const res = await api.request(

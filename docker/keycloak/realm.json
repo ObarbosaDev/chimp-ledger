@@ -28,6 +28,12 @@
       "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
     },
     {
+      "name": "wager:read:any",
+      "description": "Ler transações de qualquer provedor (backoffice e suporte)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
       "name": "wallet:reconcile",
       "description": "Rodar a reconciliação de carteiras",
       "protocol": "openid-connect",
@@ -130,7 +136,13 @@
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "defaultClientScopes": ["wallet:read", "wallet:write", "wallet:reconcile", "ledger:read"],
+      "defaultClientScopes": [
+        "wallet:read",
+        "wallet:write",
+        "wallet:reconcile",
+        "ledger:read",
+        "wager:read:any"
+      ],
       "optionalClientScopes": [],
       "protocolMappers": [
         {

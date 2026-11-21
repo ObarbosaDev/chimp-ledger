@@ -8,6 +8,8 @@ export const Scope = {
   WalletReconcile: 'wallet:reconcile',
   /** Ledger completo da carteira: mostra atividade de todos os provedores. */
   LedgerRead: 'ledger:read',
+  /** Ler transações de qualquer provedor (backoffice, suporte). */
+  WagerReadAny: 'wager:read:any',
 } as const;
 
 export type Scope = (typeof Scope)[keyof typeof Scope];
@@ -27,6 +29,16 @@ export class Principal {
 
   hasScopes(required: readonly string[]): boolean {
     return required.every((scope) => this.scopes.has(scope));
+  }
+
+  /**
+   * Pode ver dados do provedor informado? O próprio provedor pode; ver de
+   * qualquer provedor exige o escopo explícito. Não ter `provider_id` no
+   * token NÃO libera nada: um client de provedor criado sem o mapper da
+   * claim continua enxergando só o que é dele (no caso, nada).
+   */
+  canSee(providerId: string): boolean {
+    return this.providerId === providerId || this.scopes.has(Scope.WagerReadAny);
   }
 
   /** O provedor do token precisa ser o mesmo que aparece no pedido. */

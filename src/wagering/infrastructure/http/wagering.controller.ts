@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { CurrentPrincipal, RequireScopes } from '../../../auth/decorators';
-import { type Principal, Scope } from '../../../auth/principal';
+import { type Principal, ProviderMismatchError, Scope } from '../../../auth/principal';
 import { ID_GENERATOR } from '../../../bootstrap/core.module';
 import type { IdGenerator } from '../../../shared/application/ports';
 import { ZodBody } from '../../../shared/infrastructure/http/zod-body';
@@ -78,7 +78,7 @@ export class WageringController {
     const view = await this.getTransaction.byId(id);
     // Transação de outro provedor responde como inexistente: 403 aqui
     // confirmaria que aquele id existe.
-    if (principal?.providerId && principal.providerId !== view.providerId) {
+    if (principal && !principal.canSee(view.providerId)) {
       throw new TransactionNotFoundError(`Transação ${id} não encontrada`);
     }
     return view;
@@ -91,7 +91,9 @@ export class WageringController {
     @Param('externalTransactionId') externalId: string,
     @CurrentPrincipal() principal: Principal | undefined,
   ): Promise<TransactionView> {
-    if (principal?.providerId) principal.assertActsAs(providerId);
+    if (principal && !principal.canSee(providerId)) {
+      throw new ProviderMismatchError(`Sem acesso às transações do provedor ${providerId}`);
+    }
     return this.getTransaction.byExternalId(providerId, externalId);
   }
 }
