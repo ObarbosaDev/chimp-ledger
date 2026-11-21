@@ -44,8 +44,9 @@ describe('esquema: restrições e triggers', () => {
     const entryHash = 'e'.repeat(64);
     await owner.query('begin');
     await owner.query(
-      `insert into wallets (id, player_id, currency, balance, version, ledger_head_hash, created_at, updated_at)
-       values ($1, $2, 'BRL', $3, 1, $4, now(), now())`,
+      `insert into wallets (id, player_id, currency, balance, version, ledger_sequence, ledger_head_hash,
+         created_at, updated_at)
+       values ($1, $2, 'BRL', $3, 1, 1, $4, now(), now())`,
       [walletId, playerId, balance, entryHash],
     );
     await owner.query(
@@ -121,7 +122,10 @@ describe('esquema: restrições e triggers', () => {
   test('saldo negativo é recusado pelo CHECK', async () => {
     const { walletId } = await seedWallet();
     await expectError(
-      owner.query('update wallets set balance = -1, version = 2 where id = $1', [walletId]),
+      owner.query(
+        'update wallets set balance = -1, version = 2, ledger_sequence = 2 where id = $1',
+        [walletId],
+      ),
       /wallets_balance_check/,
     );
   });
@@ -129,8 +133,25 @@ describe('esquema: restrições e triggers', () => {
   test('mudar saldo sem lançamento no ledger falha no commit', async () => {
     const { walletId } = await seedWallet();
     await owner.query('begin');
-    await owner.query('update wallets set balance = 90, version = 2 where id = $1', [walletId]);
+    await owner.query(
+      'update wallets set balance = 90, version = 2, ledger_sequence = 2 where id = $1',
+      [walletId],
+    );
     await expectError(owner.query('commit'), /saldo sem lançamento/);
+  });
+
+  test('o primeiro lançamento de uma carteira precisa ser o de sequência 1', async () => {
+    const { walletId, playerId } = await seedZeroWallet();
+    const bet = await insertBet(walletId, playerId);
+    await expectError(
+      owner.query(
+        `insert into wallet_ledger_entries (id, wallet_id, transaction_id, sequence, direction, amount,
+           currency, balance_before, balance_after, prev_hash, entry_hash, created_at)
+         values ($1, $2, $3, 2, 'CREDIT', 10, 'BRL', 0, 10, $4, $5, now())`,
+        [randomUUID(), walletId, bet.id, await genesis(walletId), 'e'.repeat(64)],
+      ),
+      /sequência 1/,
+    );
   });
 
   test('versão só sobe de um em um e só quando o saldo muda', async () => {

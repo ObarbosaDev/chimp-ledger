@@ -10,6 +10,7 @@ export interface WalletRecord {
   currency: string;
   balance: string;
   version: number;
+  ledgerSequence: number;
   ledgerHeadHash: string;
   createdAt: Date;
   updatedAt: Date;
@@ -42,6 +43,7 @@ export const WalletSchema = new EntitySchema<WalletRecord>({
     currency: { type: 'string', columnType: 'char(3)' },
     balance: money,
     version: { type: 'integer' },
+    ledgerSequence: { type: 'integer' },
     ledgerHeadHash: { type: 'string', columnType: 'char(64)' },
     createdAt: timestamp,
     updatedAt: timestamp,

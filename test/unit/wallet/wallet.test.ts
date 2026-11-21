@@ -49,7 +49,16 @@ describe('Wallet.open', () => {
     const { wallet, openingEntry } = openWallet('0.00');
     expect(openingEntry).toBeUndefined();
     expect(wallet.version).toBe(1);
+    expect(wallet.ledgerSequence).toBe(0);
     expect(wallet.ledgerHeadHash).toBe(Wallet.genesisHash('wallet-1'));
+  });
+
+  test('o primeiro lançamento de uma carteira aberta com zero é o de sequência 1', () => {
+    const { wallet } = openWallet('0.00');
+    const entry = wallet.credit(movement('10.00'));
+    expect(entry.sequence).toBe(1);
+    expect(wallet.ledgerSequence).toBe(1);
+    expect(wallet.version).toBe(2);
   });
 });
 
@@ -111,6 +120,7 @@ describe('Wallet.rehydrate', () => {
       currency: 'BRL',
       balance: brl('42.00'),
       version: 7,
+      ledgerSequence: 6,
       ledgerHeadHash: 'abc',
       createdAt: at,
       updatedAt: at,

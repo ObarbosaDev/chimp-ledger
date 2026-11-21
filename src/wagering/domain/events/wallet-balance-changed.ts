@@ -11,7 +11,7 @@ export interface WalletBalanceChangedData {
   money: MoneyProps;
   balanceBefore: MoneyProps;
   balanceAfter: MoneyProps;
-  /** Igual à sequence do lançamento: o consumidor ordena e descarta repetido por ela. */
+  /** Versão da carteira depois do movimento: o consumidor ordena e descarta repetido por ela. */
   walletVersion: number;
 }
 
@@ -30,7 +30,7 @@ export class WalletBalanceChanged extends IntegrationEvent<WalletBalanceChangedD
         money: entry.money.toJSON(),
         balanceBefore: entry.balanceBefore.toJSON(),
         balanceAfter: entry.balanceAfter.toJSON(),
-        walletVersion: entry.sequence,
+        walletVersion: wallet.version,
       },
     });
   }

@@ -46,11 +46,11 @@ export class MikroOrmWalletRepository implements WalletRepository {
   }
 
   async saveMovement(wallet: Wallet, previousVersion: number): Promise<void> {
-    const { balance, version, ledgerHeadHash, updatedAt } = walletToRecord(wallet);
+    const { balance, version, ledgerSequence, ledgerHeadHash, updatedAt } = walletToRecord(wallet);
     const affected = await this.em.nativeUpdate(
       WalletSchema,
       { id: wallet.id, version: previousVersion },
-      { balance, version, ledgerHeadHash, updatedAt },
+      { balance, version, ledgerSequence, ledgerHeadHash, updatedAt },
     );
     // Com a linha travada isso nunca deveria acontecer. Se acontecer, é bug
     // de concorrência e eu prefiro estourar a gravar por cima.

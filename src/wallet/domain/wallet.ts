@@ -18,6 +18,8 @@ export interface WalletState {
   currency: string;
   balance: Money;
   version: number;
+  /** Quantos lançamentos a carteira já tem (número do último). */
+  ledgerSequence: number;
   ledgerHeadHash: string;
   createdAt: Date;
   updatedAt: Date;
@@ -55,6 +57,7 @@ export class Wallet {
     public readonly currency: string,
     private _balance: Money,
     private _version: number,
+    private _ledgerSequence: number,
     private _ledgerHeadHash: string,
     public readonly createdAt: Date,
     private _updatedAt: Date,
@@ -72,6 +75,7 @@ export class Wallet {
       currency,
       Money.zero(currency),
       1,
+      0,
       Wallet.genesisHash(props.id),
       props.at,
       props.at,
@@ -91,7 +95,7 @@ export class Wallet {
         money: props.initialBalance,
         at: props.at,
       },
-      1,
+      { bumpVersion: false },
     );
     return { wallet, openingEntry };
   }
@@ -104,6 +108,7 @@ export class Wallet {
       state.currency,
       state.balance,
       state.version,
+      state.ledgerSequence,
       state.ledgerHeadHash,
       state.createdAt,
       state.updatedAt,
@@ -127,6 +132,15 @@ export class Wallet {
     return this._updatedAt;
   }
 
+  /**
+   * Número do último lançamento. É separado da versão de propósito: a versão
+   * conta mudanças de saldo desde a criação (começa em 1), o ledger conta
+   * lançamentos (começa em 1 no primeiro, mesmo em carteira aberta com zero).
+   */
+  get ledgerSequence(): number {
+    return this._ledgerSequence;
+  }
+
   get ledgerHeadHash(): string {
     return this._ledgerHeadHash;
   }
@@ -138,12 +152,12 @@ export class Wallet {
         `Saldo ${this._balance} insuficiente para debitar ${movement.money}`,
       );
     }
-    return this.apply(LedgerDirection.Debit, movement, this._version + 1);
+    return this.apply(LedgerDirection.Debit, movement);
   }
 
   credit(movement: MovementProps): WalletLedgerEntry {
     this.assertSameCurrency(movement.money);
-    return this.apply(LedgerDirection.Credit, movement, this._version + 1);
+    return this.apply(LedgerDirection.Credit, movement);
   }
 
   // Calculo o lançamento antes de tocar no estado: se a criação falhar,
@@ -151,7 +165,7 @@ export class Wallet {
   private apply(
     direction: LedgerDirection,
     movement: MovementProps,
-    nextVersion: number,
+    { bumpVersion }: { bumpVersion: boolean } = { bumpVersion: true },
   ): WalletLedgerEntry {
     if (!movement.money.isPositive()) {
       throw new InvalidMovementError(`Movimento precisa ser positivo, recebi ${movement.money}`);
@@ -166,7 +180,7 @@ export class Wallet {
       id: movement.entryId,
       walletId: this.id,
       transactionId: movement.transactionId,
-      sequence: nextVersion,
+      sequence: this._ledgerSequence + 1,
       direction,
       money: movement.money,
       balanceBefore: before,
@@ -176,7 +190,8 @@ export class Wallet {
     });
 
     this._balance = after;
-    this._version = nextVersion;
+    if (bumpVersion) this._version += 1;
+    this._ledgerSequence = entry.sequence;
     this._ledgerHeadHash = entry.entryHash;
     this._updatedAt = movement.at;
     return entry;
