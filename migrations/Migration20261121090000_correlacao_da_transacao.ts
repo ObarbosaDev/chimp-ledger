@@ -2,7 +2,7 @@ import { Migration } from '@mikro-orm/migrations';
 
 /**
  * Guarda o correlationId da requisição (ou mensagem) que criou a transação.
- * Sem isso, os eventos que o varredor de pendências gera depois perdem o fio
+ * Sem isso, os eventos gerados no reprocessamento de pendências perdem o fio
  * com a origem e não dá para rastrear o desfecho pelo mesmo id.
  *
  * Migração nova em vez de editar a inicial: a inicial já foi aplicada e

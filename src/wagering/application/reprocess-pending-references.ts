@@ -39,7 +39,7 @@ export class ReprocessPendingReferences {
 
     let handled = 0;
     // Uma por vez de propósito: cada uma trava uma carteira, e não quero que
-    // o varredor dispute lock com o tráfego normal mais do que o necessário.
+    // o reprocessamento dispute lock com o tráfego normal mais do que o necessário.
     for (const { id, walletId } of due) {
       try {
         if (await this.reprocess(id, walletId, now)) handled++;
