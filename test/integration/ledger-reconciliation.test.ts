@@ -106,6 +106,10 @@ describe('ledger paginado e reconciliação', () => {
       ],
       ['limit zero', '?limit=0'],
       ['limit acima do máximo', '?limit=500'],
+      [
+        'cursor apontando além do maior número possível',
+        `?cursor=${Buffer.from('{"v":1,"after":3000000000}').toString('base64url')}`,
+      ],
     ])('%s → 400', async (_n, query) => {
       const { walletId } = await walletWithEntries(0);
       const res = await page(walletId, query);

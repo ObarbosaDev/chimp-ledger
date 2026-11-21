@@ -4,7 +4,11 @@ import { InvalidCursorError } from '../../application/errors';
 // O cursor é opaco para o cliente: ele só devolve o que recebeu. Por dentro é
 // a última sequência lida, com versão, para eu poder mudar o formato depois
 // sem quebrar quem guardou um cursor antigo.
-const cursorContent = z.object({ v: z.literal(1), after: z.number().int().min(0) }).strict();
+// Teto = maior valor de uma coluna integer do Postgres (a sequence do ledger).
+const MAX_SEQUENCE = 2_147_483_647;
+const cursorContent = z
+  .object({ v: z.literal(1), after: z.number().int().min(0).max(MAX_SEQUENCE) })
+  .strict();
 
 export function encodeLedgerCursor(afterSequence: number): string {
   return Buffer.from(JSON.stringify({ v: 1, after: afterSequence })).toString('base64url');
