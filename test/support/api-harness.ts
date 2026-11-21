@@ -47,7 +47,8 @@ export async function startApiHarness(): Promise<ApiHarness> {
         method,
         url,
         payload: body === undefined ? undefined : JSON.stringify(body),
-        headers: { 'content-type': 'application/json', ...headers },
+        // content-type só com corpo: JSON vazio com esse header é pedido malformado.
+        headers: body === undefined ? headers : { 'content-type': 'application/json', ...headers },
       });
       return {
         status: res.statusCode,

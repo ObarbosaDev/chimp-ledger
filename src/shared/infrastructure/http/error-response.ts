@@ -28,6 +28,7 @@ const DOMAIN_STATUS: Record<string, { status: number; publicCode?: string }> = {
   INVALID_PAYLOAD: { status: 400 },
   INVALID_MONEY: { status: 400, publicCode: 'INVALID_PAYLOAD' },
   INVALID_MOVEMENT: { status: 400, publicCode: 'INVALID_PAYLOAD' },
+  INVALID_CURSOR: { status: 400, publicCode: 'INVALID_PAYLOAD' },
   WALLET_NOT_FOUND: { status: 404 },
   TRANSACTION_NOT_FOUND: { status: 404 },
   PROVIDER_NOT_ALLOWED: { status: 422 },

@@ -7,3 +7,7 @@ export class WalletAlreadyExistsError extends DomainError {
 export class WalletNotFoundError extends DomainError {
   readonly code = 'WALLET_NOT_FOUND';
 }
+
+export class InvalidCursorError extends DomainError {
+  readonly code = 'INVALID_CURSOR';
+}

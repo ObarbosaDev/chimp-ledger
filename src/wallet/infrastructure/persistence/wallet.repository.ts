@@ -4,7 +4,12 @@ import { WalletAlreadyExistsError } from '../../application/errors';
 import type { LedgerRepository, WalletRepository } from '../../application/wallet.repository';
 import type { Wallet } from '../../domain/wallet';
 import type { WalletLedgerEntry } from '../../domain/wallet-ledger-entry';
-import { ledgerEntryToRecord, walletFromRecord, walletToRecord } from './wallet.mapper';
+import {
+  ledgerEntryFromRecord,
+  ledgerEntryToRecord,
+  walletFromRecord,
+  walletToRecord,
+} from './wallet.mapper';
 import { LedgerEntrySchema, WalletSchema } from './wallet.schemas';
 
 /**
@@ -65,5 +70,20 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
 
   async append(entry: WalletLedgerEntry): Promise<void> {
     await this.em.insert(LedgerEntrySchema, ledgerEntryToRecord(entry));
+  }
+
+  async listByWallet(
+    walletId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<WalletLedgerEntry[]> {
+    // Paginação por chave (sequence > x) em vez de OFFSET: usa o índice único
+    // (wallet_id, sequence) e não muda de resultado quando chegam lançamentos novos.
+    const records = await this.em.find(
+      LedgerEntrySchema,
+      { walletId, sequence: { $gt: afterSequence } },
+      { orderBy: { sequence: 'asc' }, limit, disableIdentityMap: true },
+    );
+    return records.map(ledgerEntryFromRecord);
   }
 }
