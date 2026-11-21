@@ -318,11 +318,27 @@ describe('POST /wagering/transactions', () => {
       expect(res.body.failureCode).toBe('CURRENCY_MISMATCH');
     });
 
-    test('carteira de outro jogador → 422 WALLET_PLAYER_MISMATCH', async () => {
+    test('carteira de outro jogador → 422 WALLET_PLAYER_MISMATCH sem revelar o saldo dela', async () => {
       const w = await openWallet('100.00');
-      const res = await submit(wager({ ...w, playerId: randomUUID() }));
+      const body = wager({ ...w, playerId: randomUUID() });
+      const res = await submit(body);
       expect(res.status).toBe(422);
       expect(res.body.failureCode).toBe('WALLET_PLAYER_MISMATCH');
+      expect(res.body.balance).toBeUndefined();
+
+      const replay = await submit(body);
+      expect(replay.body.balance).toBeUndefined();
+
+      const stored = await api.request('GET', `/wagering/transactions/${res.body.transactionId}`);
+      expect(stored.body.balance).toBeUndefined();
+
+      const [event] = await api.stack.sql<{ data: Record<string, unknown> }>(
+        `select payload->'data' as data from outbox_messages
+          where event_type = 'WagerTransactionRejected' and payload->'data'->>'transactionId' = $1`,
+        [res.body.transactionId],
+      );
+      // ausente ou null: o que importa é não ter valor nenhum
+      expect(event?.data.resultBalance ?? null).toBeNull();
     });
 
     test('carteira inexistente → 404 WALLET_NOT_FOUND', async () => {
