@@ -85,7 +85,9 @@ export class AppMetrics {
       help: 'Idade, em segundos, do evento mais antigo ainda não publicado',
       registers: [this.registry],
       async collect() {
-        this.set(await sample());
+        // Se o banco estiver fora, essa medida fica NaN e as outras métricas
+        // continuam saindo: é justamente no incidente que elas mais importam.
+        this.set(await sample().catch(() => Number.NaN));
       },
     });
   }
