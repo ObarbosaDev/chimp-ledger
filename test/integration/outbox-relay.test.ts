@@ -54,8 +54,17 @@ describe('relay da outbox', () => {
     );
   }
 
-  const relay = (publisher: EventPublisher, aggregatesPerRound = 50) =>
-    new OutboxRelay(orm, publisher, { aggregatesPerRound, leaseMs: 30_000 });
+  const relay = (
+    publisher: EventPublisher,
+    aggregatesPerRound = 50,
+    onOrderAnomaly?: (count: number) => void,
+  ) =>
+    new OutboxRelay(orm, publisher, {
+      aggregatesPerRound,
+      leaseMs: 30_000,
+      publishBatchSize: 10,
+      onOrderAnomaly,
+    });
 
   const realPublisher = () => new SqsEventPublisher(stack.sqs, queues.events);
 
@@ -283,5 +292,53 @@ describe('relay da outbox', () => {
     ).rejects.toThrow('falha depois de gravar o evento');
 
     expect(await relay(realPublisher()).runOnce(plus(1_000))).toBe(0);
+  });
+
+  test('publica em lotes de até 10 por carteira, na ordem dos eventos', async () => {
+    await seed(25, 'wallet-lote');
+    const calls: number[] = [];
+    const real = realPublisher();
+    const counting: EventPublisher = {
+      async publish(events) {
+        calls.push(events.length);
+        return real.publish(events);
+      },
+    };
+
+    expect(await relay(counting).runOnce(plus(1_000))).toBe(25);
+    expect(calls).toEqual([10, 10, 5]);
+
+    const eventIdsInOrder = (
+      await stack.sql<{ event_id: string }>(
+        `select payload->>'eventId' as event_id from outbox_messages
+          where aggregate_id = 'wallet-lote' order by occurred_at, id`,
+      )
+    ).map((r) => r.event_id);
+    expect(await drainEvents()).toEqual(eventIdsInOrder);
+  });
+
+  test('falha no meio do lote: o aceito conta como publicado e a anomalia de ordem é sinalizada', async () => {
+    await seed(10, 'wallet-anomalia');
+    const ids = await idsInOrder('wallet-anomalia');
+    const second = ids[1] ?? '';
+    const real = realPublisher();
+    // O SQS recusou só o segundo evento do lote e aceitou os outros.
+    const partial: EventPublisher = {
+      async publish(events) {
+        const outcome = await real.publish(events.filter((e) => e.id !== second));
+        return { published: outcome.published, failed: [...outcome.failed, second] };
+      },
+    };
+    const anomalies: number[] = [];
+
+    expect(await relay(partial, 50, (n) => anomalies.push(n)).runOnce(plus(1_000))).toBe(9);
+
+    const rows = await stack.sql<{ id: string; published: boolean; attempts: number }>(
+      `select id, published_at is not null as published, attempts from outbox_messages
+        where aggregate_id = 'wallet-anomalia' order by occurred_at, id`,
+    );
+    expect(rows.filter((r) => !r.published).map((r) => [r.id, r.attempts])).toEqual([[second, 1]]);
+    expect(anomalies).toEqual([8]);
+    await drainEvents();
   });
 });

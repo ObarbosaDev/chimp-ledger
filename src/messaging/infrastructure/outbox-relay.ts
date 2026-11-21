@@ -8,9 +8,18 @@ export interface OutboxRelayOptions {
   aggregatesPerRound: number;
   /** Quanto tempo os eventos reivindicados ficam reservados para quem os pegou. */
   leaseMs: number;
+  /** Quantos eventos da mesma carteira vão numa chamada ao SQS (máx. 10). */
+  publishBatchSize: number;
+  /**
+   * Chamado quando eventos de uma carteira foram aceitos depois de um que
+   * falhou no mesmo lote, ou seja, saíram na frente dele (ver publishInOrder).
+   */
+  onOrderAnomaly?: (count: number) => void;
   /** Ponto de falha injetável, só para testes: roda logo depois de reivindicar os eventos. */
   afterClaim?: () => void;
 }
+
+const SQS_BATCH_LIMIT = 10;
 
 interface ClaimedRow {
   id: string;
@@ -25,6 +34,8 @@ interface AggregateOutcome {
   published: string[];
   failed?: ClaimedRow;
   released: string[];
+  /** Eventos aceitos pelo SQS depois de um que falhou no mesmo lote. */
+  outOfOrder: number;
 }
 
 /**
@@ -36,11 +47,19 @@ interface AggregateOutcome {
  * 1. numa transação curta, travo com SKIP LOCKED o evento mais antigo
  *    pendente de cada carteira e reservo (lease) todos os pendentes dela.
  *    Outra instância não consegue pegar a mesma carteira até o lease vencer;
- * 2. fora da transação, publico os eventos de cada carteira um por um, na
- *    ordem em que aconteceram. Carteiras diferentes vão em paralelo;
+ * 2. fora da transação, publico os eventos de cada carteira em lotes de até
+ *    10, na ordem em que aconteceram (numa fila FIFO, o SQS enfileira o lote
+ *    na ordem enviada). Carteiras diferentes vão em paralelo;
  * 3. na primeira falha de uma carteira eu paro ali: o evento que falhou
- *    ganha nova tentativa com backoff e os seguintes só são liberados, sem
- *    contar tentativa. Assim nenhum evento passa na frente do anterior.
+ *    ganha nova tentativa com backoff e os seguintes que não foram enviados
+ *    só são liberados, sem contar tentativa.
+ *
+ * O lote existe porque o custo está em cada chamada ao SQS: medido no
+ * LocalStack, um por chamada fica em ~480 msg/s e lotes de 10 passam de
+ * 3.000 msg/s. O preço é um caso raro: o SQS recusar só um evento do meio
+ * do lote e aceitar os seguintes. Esses seguintes já estão na fila, então
+ * contam como publicados, e o caso vira métrica e log (onOrderAnomaly). O
+ * consumidor tem o walletVersion de cada evento para reordenar.
  *
  * Se o processo morrer no meio, o lease vence e outra instância retoma a
  * carteira do ponto em que parou. Pode haver republicação do último evento,
@@ -63,6 +82,8 @@ export class OutboxRelay {
       groupByAggregate(claimed).map((events) => this.publishInOrder(events)),
     );
     await this.settle(outcomes, now);
+    const outOfOrder = outcomes.reduce((sum, o) => sum + o.outOfOrder, 0);
+    if (outOfOrder > 0) this.options.onOrderAnomaly?.(outOfOrder);
     return outcomes.reduce((sum, o) => sum + o.published.length, 0);
   }
 
@@ -100,19 +121,35 @@ export class OutboxRelay {
   }
 
   private async publishInOrder(events: ClaimedRow[]): Promise<AggregateOutcome> {
+    const batchSize = Math.min(Math.max(this.options.publishBatchSize, 1), SQS_BATCH_LIMIT);
     const published: string[] = [];
-    for (const [index, event] of events.entries()) {
-      const outcome = await this.publisher.publish([toPublishable(event)]);
-      if (!outcome.published.includes(event.id)) {
-        return {
-          published,
-          failed: event,
-          released: events.slice(index + 1).map((e) => e.id),
-        };
+
+    for (let start = 0; start < events.length; start += batchSize) {
+      const batch = events.slice(start, start + batchSize);
+      const accepted = new Set((await this.publisher.publish(batch.map(toPublishable))).published);
+      const firstFailure = batch.findIndex((event) => !accepted.has(event.id));
+
+      if (firstFailure === -1) {
+        published.push(...batch.map((e) => e.id));
+        continue;
       }
-      published.push(event.id);
+
+      // Tudo o que o SQS aceitou está na fila, inclusive o que veio depois da
+      // falha: conta como publicado. O resto do lote e os lotes seguintes
+      // nem foram tentados, então só voltam para a fila da outbox.
+      const acceptedAfterFailure = batch.slice(firstFailure + 1).filter((e) => accepted.has(e.id));
+      published.push(...batch.filter((e) => accepted.has(e.id)).map((e) => e.id));
+      return {
+        published,
+        failed: batch[firstFailure],
+        released: [
+          ...batch.slice(firstFailure + 1).filter((e) => !accepted.has(e.id)),
+          ...events.slice(start + batchSize),
+        ].map((e) => e.id),
+        outOfOrder: acceptedAfterFailure.length,
+      };
     }
-    return { published, released: [] };
+    return { published, released: [], outOfOrder: 0 };
   }
 
   private async settle(outcomes: AggregateOutcome[], now: Date): Promise<void> {

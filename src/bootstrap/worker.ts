@@ -71,6 +71,11 @@ export async function createWorker(config: AppConfig, options: CoreOptions = {})
     {
       aggregatesPerRound: config.OUTBOX_AGGREGATES_PER_ROUND,
       leaseMs: config.OUTBOX_LEASE_MS,
+      publishBatchSize: config.OUTBOX_PUBLISH_BATCH_SIZE,
+      onOrderAnomaly: (count) => {
+        metrics.outboxOrderAnomalies.inc(count);
+        logger.warn({ event: 'outbox.order_anomaly', count });
+      },
       afterClaim: config.FAULT_INJECTION === 'crash-after-claim' ? crash : undefined,
     },
   );
