@@ -45,7 +45,7 @@ export async function createWorker(config: AppConfig): Promise<Worker> {
   const queues = await resolveQueueUrls(sqs, queueNamesFrom(config));
 
   const relay = new OutboxRelay(orm, new SqsEventPublisher(sqs, queues.events), {
-    batchSize: config.OUTBOX_BATCH_SIZE,
+    aggregatesPerRound: config.OUTBOX_AGGREGATES_PER_ROUND,
     leaseMs: config.OUTBOX_LEASE_MS,
   });
 

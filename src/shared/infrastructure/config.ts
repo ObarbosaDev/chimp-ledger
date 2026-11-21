@@ -11,7 +11,7 @@ const schema = z.object({
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(2_000),
 
-  OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  OUTBOX_AGGREGATES_PER_ROUND: z.coerce.number().int().positive().default(50),
   OUTBOX_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(250),
 

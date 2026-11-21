@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { DeleteMessageCommand, ReceiveMessageCommand } from '@aws-sdk/client-sqs';
+import {
+  DeleteMessageCommand,
+  PurgeQueueCommand,
+  ReceiveMessageCommand,
+} from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { OutboxMessage } from '../../src/messaging/domain/outbox-message';
 import {
@@ -34,6 +38,7 @@ describe('relay da outbox', () => {
 
   beforeEach(async () => {
     await stack.sql('delete from outbox_messages');
+    await stack.sqs.send(new PurgeQueueCommand({ QueueUrl: queues.events }));
   });
 
   const t0 = new Date('2026-11-20T12:00:00.000Z');
@@ -49,8 +54,8 @@ describe('relay da outbox', () => {
     );
   }
 
-  const relay = (publisher: EventPublisher, batchSize = 50) =>
-    new OutboxRelay(orm, publisher, { batchSize, leaseMs: 30_000 });
+  const relay = (publisher: EventPublisher, aggregatesPerRound = 50) =>
+    new OutboxRelay(orm, publisher, { aggregatesPerRound, leaseMs: 30_000 });
 
   const realPublisher = () => new SqsEventPublisher(stack.sqs, queues.events);
 
@@ -154,6 +159,78 @@ describe('relay da outbox', () => {
     expect(await relay(realPublisher()).runOnce(plus(5_000))).toBe(0);
     expect(await relay(realPublisher()).runOnce(plus(31_001))).toBe(1);
   });
+
+  const idsInOrder = async (aggregateId: string) =>
+    (
+      await stack.sql<{ id: string }>(
+        'select id from outbox_messages where aggregate_id = $1 order by occurred_at, id',
+        [aggregateId],
+      )
+    ).map((r) => r.id);
+
+  test('falha num evento segura os seguintes da mesma carteira', async () => {
+    await seed(3, 'wallet-ordem');
+    const [first, second, third] = await idsInOrder('wallet-ordem');
+    const failingFirst: EventPublisher = {
+      async publish(events) {
+        if (events.some((e) => e.id === first)) return { published: [], failed: [first ?? ''] };
+        return realPublisher().publish(events);
+      },
+    };
+
+    expect(await relay(failingFirst).runOnce(plus(1_000))).toBe(0);
+    const rows = await stack.sql<{ id: string; published_at: Date | null; attempts: number }>(
+      'select id, published_at, attempts from outbox_messages order by occurred_at, id',
+    );
+    expect(rows.map((r) => [r.published_at === null, r.attempts])).toEqual([
+      [true, 1],
+      [true, 0],
+      [true, 0],
+    ]);
+
+    expect(await relay(realPublisher()).runOnce(plus(2_000))).toBe(3);
+    // A fila FIFO entrega na ordem em que o relay publicou.
+    const delivered = await drainEvents();
+    const eventIdsInOrder = (
+      await stack.sql<{ event_id: string }>(
+        `select payload->>'eventId' as event_id from outbox_messages
+          where id = any($1::uuid[]) order by occurred_at, id`,
+        [[first, second, third]],
+      )
+    ).map((r) => r.event_id);
+    expect(delivered).toEqual(eventIdsInOrder);
+  });
+
+  test('com dois relays, cada carteira é publicada na ordem dos seus eventos', async () => {
+    const wallets = Array.from({ length: 10 }, (_, i) => `wallet-${i}`);
+    for (const w of wallets) await seed(20, w);
+    const publishLog: string[] = [];
+    const logging = (): EventPublisher => {
+      const real = realPublisher();
+      return {
+        async publish(events) {
+          const outcome = await real.publish(events);
+          publishLog.push(...outcome.published);
+          return outcome;
+        },
+      };
+    };
+
+    const a = relay(logging(), 3);
+    const b = relay(logging(), 3);
+    let total = 0;
+    for (let round = 0; round < 30 && total < 200; round++) {
+      const [x, y] = await Promise.all([a.runOnce(plus(1_000)), b.runOnce(plus(1_000))]);
+      total += x + y;
+    }
+
+    expect(total).toBe(200);
+    for (const w of wallets) {
+      const expected = await idsInOrder(w);
+      expect(publishLog.filter((id) => expected.includes(id))).toEqual(expected);
+    }
+    await drainEvents();
+  }, 60_000);
 
   test('evento de transação que deu rollback nunca existe na outbox', async () => {
     const uow = new MikroOrmUnitOfWork(orm, 2_000);
