@@ -28,13 +28,19 @@ const CLOCK_TOLERANCE_SECONDS = 5;
  */
 export class JwtIdentityProvider implements IdentityProvider {
   private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
+  private readonly issuer: string;
   private readonly providerIdClaim: string;
 
   constructor(private readonly options: JwtIdentityProviderOptions) {
-    this.jwks = createRemoteJWKSet(
-      new URL(`${options.issuer.replace(/\/$/, '')}/protocol/openid-connect/certs`),
-      { timeoutDuration: 3_000, cooldownDuration: 30_000, cacheMaxAge: 10 * 60_000 },
-    );
+    // O `iss` do token vem sem barra no final. Normalizo uma vez e uso o
+    // mesmo valor para a JWKS e para a validação, senão uma barra a mais na
+    // configuração recusaria todos os tokens.
+    this.issuer = options.issuer.replace(/\/+$/, '');
+    this.jwks = createRemoteJWKSet(new URL(`${this.issuer}/protocol/openid-connect/certs`), {
+      timeoutDuration: 3_000,
+      cooldownDuration: 30_000,
+      cacheMaxAge: 10 * 60_000,
+    });
     this.providerIdClaim = options.providerIdClaim ?? 'provider_id';
   }
 
@@ -42,7 +48,7 @@ export class JwtIdentityProvider implements IdentityProvider {
     let payload: JWTPayload;
     try {
       ({ payload } = await jwtVerify(bearerToken, this.jwks, {
-        issuer: this.options.issuer,
+        issuer: this.issuer,
         audience: this.options.audience,
         algorithms: ALLOWED_ALGORITHMS,
         clockTolerance: CLOCK_TOLERANCE_SECONDS,

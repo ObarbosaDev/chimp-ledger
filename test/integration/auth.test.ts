@@ -250,4 +250,32 @@ describe('autenticação com Keycloak', () => {
       await offline.stop();
     }
   }, 180_000);
+
+  test('o esquema "bearer" em minúsculas também vale (RFC 7235)', async () => {
+    const res = await api.request('GET', `/wallets/${randomUUID()}`, undefined, {
+      authorization: `bearer ${tokens.backoffice}`,
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test('emissor configurado com barra no final continua funcionando', async () => {
+    const withSlash = await startApiHarness({
+      env: {
+        AUTH_ENABLED: 'true',
+        AUTH_ISSUER_URL: `${keycloak.issuer}/`,
+        AUTH_AUDIENCE: 'chimp-ledger',
+      },
+    });
+    try {
+      const res = await withSlash.request(
+        'GET',
+        `/wallets/${randomUUID()}`,
+        undefined,
+        bearer(tokens.backoffice),
+      );
+      expect(res.status).toBe(404);
+    } finally {
+      await withSlash.stop();
+    }
+  }, 180_000);
 });

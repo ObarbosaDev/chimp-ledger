@@ -10,7 +10,8 @@ interface HttpRequest extends AuthenticatedRequest {
   headers: Record<string, string | string[] | undefined>;
 }
 
-const BEARER = /^Bearer ([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*)$/;
+// O esquema de autenticação não diferencia maiúsculas (RFC 7235): "bearer" também vale.
+const BEARER = /^Bearer ([A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*)$/i;
 
 /**
  * Guard global: toda rota exige token, salvo as marcadas com @Public.
