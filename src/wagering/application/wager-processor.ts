@@ -99,15 +99,12 @@ export class WagerProcessor {
       if (decision.outcome === 'REJECT') {
         return run.reject(decision.code);
       }
-      // Só checo "já revertida" depois de saber que a referência é válida.
-      // Como a referência é da mesma carteira, o lock que eu seguro já
-      // impede outra reversão concorrente; o índice único é a rede de baixo.
-      if (
-        transaction.isReversal() &&
-        reference &&
-        (await tx.transactions.hasProcessedReversal(reference.id))
-      ) {
-        return run.reject(FailureCode.AlreadyReversed);
+      // Daqui em diante a referência é válida. As duas checagens abaixo olham
+      // o que já aconteceu com ela; como ela é da mesma carteira, o lock que
+      // eu seguro impede que isso mude no meio do caminho.
+      if (reference) {
+        const conflict = await this.lifecycleConflict(tx, reference);
+        if (conflict) return run.reject(conflict);
       }
     }
 
@@ -163,6 +160,29 @@ export class WagerProcessor {
     await run.publish(events);
 
     return resultOf(transaction, wallet, false);
+  }
+
+  /**
+   * Regras de ciclo de vida da referência:
+   * - nada se apoia numa transação que já foi revertida (REFUND/ROLLBACK);
+   * - uma BET liquidada (WIN ou LOSS ainda válido) não aceita outra
+   *   liquidação nem reembolso. Se o WIN for desfeito por ROLLBACK, a BET
+   *   volta a ficar em aberto.
+   */
+  private async lifecycleConflict(
+    tx: TransactionScope,
+    reference: WagerTransaction,
+  ): Promise<FailureCode | undefined> {
+    if (await tx.transactions.hasProcessedReversal(reference.id)) {
+      return FailureCode.AlreadyReversed;
+    }
+    if (
+      reference.kind === WagerTransactionKind.Bet &&
+      (await tx.transactions.isSettled(reference.id))
+    ) {
+      return FailureCode.BetAlreadySettled;
+    }
+    return undefined;
   }
 
   private nextReferenceCheck(transaction: WagerTransaction, at: Date): Date {

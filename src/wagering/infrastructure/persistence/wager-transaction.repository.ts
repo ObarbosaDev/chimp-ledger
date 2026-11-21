@@ -67,6 +67,26 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
     return count > 0;
   }
 
+  async isSettled(betTransactionId: string): Promise<boolean> {
+    const [row] = await this.em.execute<{ settled: boolean }[]>(
+      `select exists (
+         select 1
+           from wager_transactions s
+          where s.reference_transaction_id = ?
+            and s.status = 'PROCESSED'
+            and s.kind in ('WIN', 'LOSS')
+            and not exists (
+                  select 1
+                    from wager_transactions r
+                   where r.reference_transaction_id = s.id
+                     and r.status = 'PROCESSED'
+                     and r.kind = 'ROLLBACK')
+       ) as settled`,
+      [betTransactionId],
+    );
+    return row?.settled === true;
+  }
+
   async findDuePendingReferences(now: Date, limit: number): Promise<PendingReferenceRef[]> {
     const rows = await this.em.find(
       WagerTransactionSchema,

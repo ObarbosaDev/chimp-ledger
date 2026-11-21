@@ -290,6 +290,86 @@ describe('POST /wagering/transactions', () => {
     });
   });
 
+  // Uma aposta é liquidada uma vez (WIN ou LOSS) e, depois de liquidada, não
+  // pode ser reembolsada; depois de revertida, não pode ser liquidada. É o
+  // que impede o jogador de ficar com o prêmio e com a aposta de volta.
+  describe('liquidação da aposta', () => {
+    async function settledRound(settlement: 'WIN' | 'LOSS') {
+      const w = await openWallet('100.00');
+      const bet = wager(w, { money: { amount: '40.00', currency: 'BRL' } });
+      await submit(bet);
+      const settle = wager(w, {
+        kind: settlement,
+        money: { amount: settlement === 'WIN' ? '90.00' : '0.00', currency: 'BRL' },
+        referenceExternalTransactionId: bet.externalTransactionId,
+      });
+      expect((await submit(settle)).status).toBe(201);
+      return { w, bet, settle };
+    }
+
+    const reverse = (
+      w: { walletId: string; playerId: string },
+      kind: string,
+      target: Record<string, unknown>,
+    ) =>
+      submit(
+        wager(w, {
+          kind,
+          money: target.money,
+          referenceExternalTransactionId: target.externalTransactionId,
+        }),
+      );
+
+    test('BET já paga com WIN não aceita REFUND', async () => {
+      const { w, bet } = await settledRound('WIN');
+      const res = await reverse(w, 'REFUND', bet);
+      expect(res.status).toBe(422);
+      expect(res.body.failureCode).toBe('BET_ALREADY_SETTLED');
+      await assertLedgerInvariant(api.stack, w.walletId);
+    });
+
+    test('BET encerrada com LOSS não aceita ROLLBACK', async () => {
+      const { w, bet } = await settledRound('LOSS');
+      expect((await reverse(w, 'ROLLBACK', bet)).body.failureCode).toBe('BET_ALREADY_SETTLED');
+    });
+
+    test('BET já liquidada não aceita um segundo WIN', async () => {
+      const { w, bet } = await settledRound('WIN');
+      const res = await submit(
+        wager(w, {
+          kind: 'WIN',
+          money: { amount: '10.00', currency: 'BRL' },
+          referenceExternalTransactionId: bet.externalTransactionId,
+        }),
+      );
+      expect(res.body.failureCode).toBe('BET_ALREADY_SETTLED');
+    });
+
+    test('BET reembolsada não aceita WIN', async () => {
+      const w = await openWallet('100.00');
+      const bet = wager(w, { money: { amount: '40.00', currency: 'BRL' } });
+      await submit(bet);
+      expect((await reverse(w, 'REFUND', bet)).status).toBe(201);
+      const res = await submit(
+        wager(w, {
+          kind: 'WIN',
+          money: { amount: '90.00', currency: 'BRL' },
+          referenceExternalTransactionId: bet.externalTransactionId,
+        }),
+      );
+      expect(res.body.failureCode).toBe('ALREADY_REVERSED');
+    });
+
+    test('depois do ROLLBACK do WIN, a BET volta a aceitar REFUND', async () => {
+      const { w, bet, settle } = await settledRound('WIN');
+      expect((await reverse(w, 'ROLLBACK', settle)).status).toBe(201);
+      const res = await reverse(w, 'REFUND', bet);
+      expect(res.status).toBe(201);
+      expect(res.body.balance.amount).toBe('100.00');
+      await assertLedgerInvariant(api.stack, w.walletId);
+    });
+  });
+
   describe('validação e contexto', () => {
     test('sem Idempotency-Key → 400', async () => {
       const w = await openWallet();
