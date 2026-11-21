@@ -33,7 +33,7 @@ A regra que guiou o projeto: **uma garantia financeira não pode depender de uma
 | Uma carteira por jogador + moeda | — | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
 | Reverter só uma vez | `evaluateReference` | índice único parcial | `schema-constraints.test.ts` |
 | Estado final é final | transições lançam erro | trigger bloqueia mudança de status terminal | `wager-transaction.test.ts` |
-| Idempotência persistente | `payloadHash` canônico | `UNIQUE (provider_id, idempotency_key)` | `schema-constraints.test.ts` (fluxo HTTP em implementação) |
+| Idempotência persistente | `payloadHash` canônico | `UNIQUE (provider_id, idempotency_key)` | `submit-wager.test.ts`, `same-wallet.test.ts` |
 
 > **Por que no banco também?** Porque bug acontece, e SQL manual também. Se um dia alguém atualizar um saldo direto no Postgres sem o lançamento correspondente, o commit falha. A aplicação não precisa ser perfeita para o dinheiro ficar certo.
 
@@ -115,7 +115,9 @@ bun install
 docker compose up -d --wait        # Postgres 16 + LocalStack (SQS)
 cp .env.example .env
 bun run migration:up               # cria esquema, triggers e permissões
+bun run setup:sqs                  # cria as filas FIFO e a DLQ no LocalStack
 bun run start:api                  # http://localhost:3000
+bun run start:worker               # outra aba: fila, outbox e referências pendentes
 ```
 
 O Postgres sobe com dois usuários: `chimp_migrator`, dono das tabelas e usado só nas migrações, e `chimp_app`, usado pela aplicação, **sem permissão** de `UPDATE`/`DELETE` no ledger.
@@ -213,10 +215,10 @@ O desafio tem prazo de 3 dias e o projeto está sendo entregue em fatias vertica
 - [x] Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
 - [x] Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
 - [x] Abertura e consulta de carteira via HTTP, mapa único de erros
-- [ ] Submissão de transações (`POST /wagering/transactions`) com idempotência
-- [ ] Testes de concorrência com várias instâncias reais
-- [ ] Relay da outbox, consumidor SQS com DLQ e desligamento gracioso
-- [ ] Reprocessamento de referências pendentes com backoff
+- [x] Submissão de transações (`POST /wagering/transactions`) com idempotência
+- [x] Testes de concorrência com várias instâncias reais (simulação com seed)
+- [x] Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
+- [x] Reprocessamento de referências pendentes com backoff
 - [ ] Ledger paginado e reconciliação
 - [ ] Logs estruturados, métricas e health checks
 - [ ] Autenticação com Keycloak
