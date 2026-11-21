@@ -21,6 +21,7 @@ describe('processo worker', () => {
         SQS_ENDPOINT: stack.sqsEndpoint,
         OUTBOX_POLL_MS: '50',
         SQS_WAIT_TIME_SECONDS: '1',
+        WORKER_HTTP_PORT: '0',
         LOG_LEVEL: 'silent',
       }),
     );
@@ -100,4 +101,19 @@ describe('processo worker', () => {
     }
     expect(row).toEqual({ balance: '15.00', published: 2 });
   }, 30_000);
+
+  test('expõe health checks e métricas numa porta própria', async () => {
+    const live = await fetch(`${worker.url}/health/live`);
+    expect(live.status).toBe(200);
+
+    const ready = await fetch(`${worker.url}/health/ready`);
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ status: 'ok', checks: { postgres: 'up', sqs: 'up' } });
+
+    const metrics = await (await fetch(`${worker.url}/metrics`)).text();
+    expect(metrics).toMatch(/^outbox_lag_seconds \d/m);
+    expect(metrics).toMatch(/^outbox_published_total [1-9]/m);
+    expect(metrics).toMatch(/^wager_consumer_messages_total\{outcome="acked"\} [1-9]/m);
+    expect(metrics).toMatch(/^wager_transactions_total\{[^}]*source="sqs"[^}]*\} [1-9]/m);
+  });
 });

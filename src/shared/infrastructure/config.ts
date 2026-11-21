@@ -28,6 +28,9 @@ const schema = z.object({
   REFERENCE_REPROCESS_POLL_MS: z.coerce.number().int().positive().default(1_000),
   REFERENCE_REPROCESS_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 
+  // Porta do worker só para health checks e /metrics (0 = qualquer porta livre).
+  WORKER_HTTP_PORT: z.coerce.number().int().min(0).default(3001),
+
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ACCESS_KEY_ID: z.string().default('test'),
   AWS_SECRET_ACCESS_KEY: z.string().default('test'),
