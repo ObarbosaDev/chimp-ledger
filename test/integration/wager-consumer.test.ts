@@ -336,4 +336,37 @@ describe('consumidor SQS de transações', () => {
     expect((await transactionStatus(refund.data.idempotencyKey))?.status).toBe('PROCESSED');
     expect(await approxCount(queues.transactions)).toBe(0);
   });
+
+  test('falha passageira na primeira mensagem do grupo segura as seguintes', async () => {
+    const w = await wallet('150.00');
+    const first = message(w, { money: { amount: '100.00', currency: 'BRL' } });
+    const second = message(w, { money: { amount: '100.00', currency: 'BRL' } });
+    await send(first, w.walletId);
+    await send(second, w.walletId);
+
+    // Caso de uso real, com uma falha passageira injetada só na 1ª tentativa
+    // da primeira aposta (o mesmo efeito de um lock_timeout).
+    let failedOnce = false;
+    const flaky = {
+      execute: (...args: Parameters<SubmitWagerTransaction['execute']>) => {
+        if (args[0].idempotencyKey === first.data.idempotencyKey && !failedOnce) {
+          failedOnce = true;
+          return Promise.reject(new Error('falha passageira simulada'));
+        }
+        return submit.execute(...args);
+      },
+    } as SubmitWagerTransaction;
+
+    const c = consumer(flaky);
+    await c.pollOnce();
+    expect(await transactionStatus(second.data.idempotencyKey)).toBeUndefined();
+
+    for (let i = 0; i < 6 && (await approxCount(queues.transactions)) > 0; i++) await c.pollOnce();
+
+    expect((await transactionStatus(first.data.idempotencyKey))?.status).toBe('PROCESSED');
+    expect(await transactionStatus(second.data.idempotencyKey)).toEqual({
+      status: 'REJECTED',
+      failure_code: 'INSUFFICIENT_FUNDS',
+    });
+  });
 });
