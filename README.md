@@ -238,3 +238,9 @@ Algumas coisas que só apareceram na hora de rodar contra infraestrutura de verd
 - **Uma função de trigger para duas tabelas.** A checagem "saldo bate com o ledger" dispara pela carteira e pelo lançamento, e `NEW` tem campos diferentes em cada tabela. Resolvi olhando `TG_TABLE_NAME`.
 - **CRLF quebra script de container.** No Windows o Git converte quebra de linha por padrão; `.gitattributes` fixa LF para o repositório inteiro.
 - **`emitDecoratorMetadata` no Bun.** Para não depender de como o runtime emite metadata, todo construtor do Nest usa `@Inject` explícito.
+
+---
+
+## Autor
+
+**Matheus Barbosa** · [github.com/ObarbosaDev](https://github.com/ObarbosaDev)
