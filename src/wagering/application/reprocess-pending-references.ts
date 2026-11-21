@@ -86,6 +86,10 @@ export class ReprocessPendingReferences {
     });
     if (!handled) return false;
 
+    // Reagendar (a referência ainda não chegou) não é desfecho: a transação
+    // continua pendente. Só conto e registro quando ela sai desse estado.
+    if (handled.result.status === WagerTransactionStatus.PendingReference) return true;
+
     this.options.observer?.transactionHandled({
       source: 'reprocess',
       kind: handled.pending.kind,
