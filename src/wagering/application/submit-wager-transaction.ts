@@ -7,6 +7,7 @@ import type { Wallet } from '../../wallet/domain/wallet';
 import { computePayloadHash } from '../domain/payload-hash';
 import { WagerTransaction, type WagerTransactionKind } from '../domain/wager-transaction';
 import { IdempotencyConflictError, ProviderNotAllowedError } from './errors';
+import { noopWagerObserver, type WagerObserver } from './wager-observer';
 import { resultOf, type SubmitWagerResult, type WagerProcessor } from './wager-processor';
 
 export type { SubmitWagerResult } from './wager-processor';
@@ -46,9 +47,30 @@ export class SubmitWagerTransaction {
     private readonly ids: IdGenerator,
     private readonly clock: Clock,
     private readonly processor: WagerProcessor,
+    private readonly observer: WagerObserver = noopWagerObserver,
   ) {}
 
   async execute(command: SubmitWagerCommand, context: SubmitContext): Promise<SubmitWagerResult> {
+    const startedAt = performance.now();
+    const result = await this.handle(command, context);
+    // Só depois do commit: o que é observado é o que de fato ficou gravado.
+    this.observer.transactionHandled({
+      source: context.inbox ? 'sqs' : 'http',
+      kind: command.kind,
+      providerId: command.providerId,
+      walletId: command.walletId,
+      correlationId: context.correlationId,
+      messageId: context.inbox?.messageId,
+      result,
+      durationMs: performance.now() - startedAt,
+    });
+    return result;
+  }
+
+  private async handle(
+    command: SubmitWagerCommand,
+    context: SubmitContext,
+  ): Promise<SubmitWagerResult> {
     const at = this.clock.now();
     const payloadHash = computePayloadHash(command);
 
