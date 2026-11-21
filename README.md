@@ -1,5 +1,7 @@
 # chimp-ledger
 
+[![CI](https://github.com/ObarbosaDev/chimp-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/ObarbosaDev/chimp-ledger/actions/workflows/ci.yml)
+
 Carteira e ledger para apostas distribuídas. O serviço recebe operações de vários provedores de jogos (`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`) por HTTP e por SQS, e continua correto quando essas mensagens chegam **duplicadas**, **fora de ordem** ou **ao mesmo tempo em várias instâncias**.
 
 Construído para o desafio técnico de Backend da Jungle Gaming.
