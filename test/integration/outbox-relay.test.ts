@@ -6,6 +6,10 @@ import {
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
+import {
+  IntegrationEvent,
+  type IntegrationEventProps,
+} from '../../src/messaging/domain/integration-event';
 import { OutboxMessage } from '../../src/messaging/domain/outbox-message';
 import {
   type EventPublisher,
@@ -18,6 +22,16 @@ import { runMigrations } from '../../src/shared/infrastructure/database/migrator
 import { MikroOrmUnitOfWork } from '../../src/shared/infrastructure/database/mikro-orm-unit-of-work';
 import { createOrm } from '../../src/shared/infrastructure/database/orm';
 import { startTestStack, type TestStack } from '../support/test-stack';
+
+/** Evento mínimo, só para provar que uma transação desfeita não deixa nada na outbox. */
+class RollbackProbe extends IntegrationEvent<{ motivo: string }> {
+  readonly eventType = 'RollbackProbe';
+  readonly version = 1;
+
+  constructor(props: IntegrationEventProps<{ motivo: string }>) {
+    super(props);
+  }
+}
 
 describe('relay da outbox', () => {
   let stack: TestStack;
@@ -277,16 +291,16 @@ describe('relay da outbox', () => {
 
   test('evento de transação que deu rollback nunca existe na outbox', async () => {
     const uow = new MikroOrmUnitOfWork(orm, 2_000);
-    const fakeEvent = {
+    const event = new RollbackProbe({
       eventId: randomUUID(),
-      eventType: 'WalletBalanceChanged',
       aggregateId: 'wallet-z',
+      correlationId: 'corr-rollback',
       occurredAt: t0,
-      toJSON: () => ({ eventId: 'x' }),
-    };
+      data: { motivo: 'transação que não vai comitar' },
+    });
     await expect(
       uow.run(async (tx) => {
-        await tx.outbox.enqueue([OutboxMessage.enqueue(fakeEvent as never)]);
+        await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
         throw new Error('falha depois de gravar o evento');
       }),
     ).rejects.toThrow('falha depois de gravar o evento');
