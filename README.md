@@ -49,6 +49,8 @@ Dez destas garantias também têm uma sabotagem em `bun run test:mutation`: o c�
 
 ## Arquitetura
 
+O raciocínio completo, com as alternativas descartadas e as limitações, está em [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 Monólito modular, com módulos separados em `domain` / `application` / `infrastructure`. O domínio não conhece NestJS, MikroORM nem Bun, e existe um teste (`test/architecture`) que falha se alguém quebrar essa fronteira.
 
 ```mermaid
@@ -284,7 +286,7 @@ src/
 migrations/    SQL escrito à mão, com up e down
 scripts/       migração, filas e dados de desenvolvimento
 docker/        papéis do Postgres, realm do Keycloak, nginx, Prometheus e Grafana
-docs/          rastreabilidade do enunciado e relatório de carga
+docs/          rastreabilidade do enunciado, relatório de carga e registros de decisão (adr/)
 test/
   unit/ · integration/ · concurrency/ · architecture/ · load/ · mutation/ · support/
 ```
@@ -308,7 +310,7 @@ O projeto foi entregue em fatias verticais, cada uma testada antes da próxima, 
 - [x] Teste de carga com relatório, e o gargalo encontrado corrigido
 - [x] Recuperação com processos derrubados no meio do trabalho
 - [x] Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
-- [ ] `ARCHITECTURE.md` com as decisões e trade-offs
+- [x] [`ARCHITECTURE.md`](ARCHITECTURE.md) com as decisões, interpretações, trade-offs e limitações, e os registros de decisão em [`docs/adr/`](docs/adr)
 
 ---
 

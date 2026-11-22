@@ -46,9 +46,9 @@ bun run test:load        # carga com verificação das invariantes no final
 | `Money` imutável, escala 2, recusa NaN/Infinity/notação científica/>2 casas/negativo | `src/shared/domain/money.ts` | `money.test.ts` |
 | Moedas diferentes lançam erro | `assertSameCurrency` | `money.test.ts`, `wallet.test.ts` |
 | Uma carteira por jogador + moeda | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` (409) |
-| `version` começa em 1 e sobe só com o saldo | `Wallet` + trigger `check_wallet_update` | `wallet.test.ts` · `schema-constraints.test.ts` |
-| Toda alteração de saldo tem lançamento (e vice-versa) | Trigger diferido `check_wallet_matches_ledger` | `schema-constraints.test.ts`: *mudar saldo sem lançamento no ledger falha no commit* |
-| Transições explícitas; estados finais não mudam | `WagerTransaction` + trigger `check_wager_transaction_update` | `wager-transaction.test.ts` · `schema-constraints.test.ts`: *transação em estado final não muda mais* |
+| `version` começa em 1 e sobe só com o saldo | `Wallet` + trigger `trg_wallet_update` | `wallet.test.ts` · `schema-constraints.test.ts` |
+| Toda alteração de saldo tem lançamento (e vice-versa) | Triggers diferidos `trg_wallet_matches_ledger` e `trg_ledger_matches_wallet` | `schema-constraints.test.ts`: *mudar saldo sem lançamento no ledger falha no commit* |
+| Transições explícitas; estados finais não mudam | `WagerTransaction` + trigger `trg_wager_transaction_update` | `wager-transaction.test.ts` · `schema-constraints.test.ts`: *transação em estado final não muda mais* |
 | `OPENING` interna | Enum do contrato sem `OPENING` + `CHECK` no banco | `submit-wager.test.ts` (400) · `schema-constraints.test.ts` |
 | Lançamento imutável, aritmética validada | `WalletLedgerEntry` congelado + `CHECK` aritmético | `wallet-ledger-entry.test.ts` · `schema-constraints.test.ts` |
 | Inbox, saldo, ledger e outbox na mesma transação | `SubmitWagerTransaction` + `MikroOrmUnitOfWork` | `outbox-relay.test.ts` (rollback) · `recovery.test.ts` |
