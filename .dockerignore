@@ -1,7 +1,7 @@
 node_modules
 .git
 .github
-.superpowers
+.local
 .idea
 .vscode
 test

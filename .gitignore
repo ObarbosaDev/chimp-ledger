@@ -5,7 +5,7 @@ coverage/
 .env.*
 !.env.example
 *.log
-.superpowers/
+.local/
 .DS_Store
 test/load/results/
 .idea/
