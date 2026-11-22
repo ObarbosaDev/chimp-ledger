@@ -10,3 +10,4 @@ coverage/
 test/load/results/
 .idea/
 .vscode/
+test/mutation/results/
