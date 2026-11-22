@@ -29,11 +29,17 @@ A regra que guiou o projeto: **uma garantia financeira não pode depender de uma
 | Saldo nunca negativo | `Wallet.debit` recusa | `CHECK (balance >= 0)` | `schema-constraints.test.ts` |
 | Saldo só muda com lançamento | `debit`/`credit` sempre devolvem o lançamento | trigger **diferido** confere no commit | `schema-constraints.test.ts` |
 | Ledger imutável | entidade congelada, sem métodos de escrita | trigger bloqueia `UPDATE`/`DELETE`/`TRUNCATE` + app sem permissão | `schema-constraints.test.ts` |
-| Ledger encadeado | cada lançamento leva o hash do anterior | trigger exige sequência, saldo e `prev_hash` contínuos | `wallet-ledger-entry.test.ts` |
+| Ledger encadeado | cada lançamento leva o hash do anterior | trigger exige que o primeiro seja o 1 e que sequência, saldo e `prev_hash` continuem do anterior | `wallet-ledger-entry.test.ts`, `ledger-chain.test.ts` |
 | Uma carteira por jogador + moeda | — | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
-| Reverter só uma vez | `evaluateReference` | índice único parcial | `schema-constraints.test.ts` |
+| Reverter só uma vez | regra de ciclo de vida no `WagerProcessor` | índice único parcial | `schema-constraints.test.ts` |
+| Aposta liquidada é fechada | WIN/LOSS válido impede nova liquidação e reembolso | — | `submit-wager.test.ts` (liquidação) |
 | Estado final é final | transições lançam erro | trigger bloqueia mudança de status terminal | `wager-transaction.test.ts` |
 | Idempotência persistente | `payloadHash` canônico | `UNIQUE (provider_id, idempotency_key)` | `submit-wager.test.ts`, `same-wallet.test.ts` |
+| Provedor só age por si | o provedor vem do token, não do corpo | — | `auth.test.ts` (Keycloak real) |
+| Saldo alheio não vaza | recusa sem snapshot de saldo | `CHECK` proíbe snapshot nessa recusa | `submit-wager.test.ts` |
+| Eventos em ordem por carteira | relay reivindica carteiras inteiras, em lotes ordenados | `SKIP LOCKED` + lease | `outbox-relay.test.ts` |
+
+Toda linha desta tabela tem uma sabotagem correspondente em `bun run test:mutation`: o código é quebrado de propósito e o teste precisa falhar.
 
 > **Por que no banco também?** Porque bug acontece, e SQL manual também. Se um dia alguém atualizar um saldo direto no Postgres sem o lançamento correspondente, o commit falha. A aplicação não precisa ser perfeita para o dinheiro ficar certo.
 
@@ -87,6 +93,9 @@ sequenceDiagram
 - **Replay devolve o saldo daquele momento**, não o atual. A transação guarda um snapshot do saldo ao ficar final.
 - **Domínio puro + `EntitySchema`.** As entidades de domínio têm construtor privado e fábricas (`create`, `rehydrate`); a persistência fica em schemas e mappers separados.
 - **Escrita explícita no repositório** (`insert`/`nativeUpdate` em ordem) em vez do flush automático do Unit of Work, porque há FK entre carteira, transação e lançamento, e um trigger que confere tudo no commit.
+- **Outbox por carteira.** O relay reivindica carteiras inteiras com `SKIP LOCKED` e lease, e publica os eventos de cada uma em lotes ordenados de até 10. Processo morto no meio: o lease vence e outro assume.
+- **Inbox + idempotência no banco**, não no SQS. A deduplicação do FIFO é otimização; quem garante que nada é aplicado duas vezes é o Postgres.
+- **Autenticação atrás de uma porta.** A aplicação só conhece `IdentityProvider`; o adaptador valida o JWT do Keycloak pela JWKS. Guard global fechado por padrão, escopos por rota e o provedor sempre tirado do token.
 
 ---
 
@@ -101,8 +110,10 @@ sequenceDiagram
 | Fila | **SQS FIFO (LocalStack)** | DLQ por redrive, agrupamento por carteira |
 | Dinheiro | **decimal.js** | nada de `number` encostando em valor |
 | Validação | **zod** (`.strict()`) | campo desconhecido é recusado, não ignorado |
-| Testes | **bun test + Testcontainers** | Postgres e LocalStack reais, nada de mock de infra |
-| Qualidade | **TypeScript strict + Biome** | `noUncheckedIndexedAccess`, lint e format rápidos |
+| Autenticação | **Keycloak + jose** | OIDC padrão, JWT validado pela JWKS, sem SDK pesado |
+| Observabilidade | **pino + prom-client, Prometheus e Grafana** | logs JSON com ids de rastreio, métricas e dashboard versionado |
+| Testes | **bun test + Testcontainers** | Postgres, LocalStack e Keycloak reais, nada de mock de infra |
+| Qualidade | **TypeScript strict + Biome + GitHub Actions** | `noUncheckedIndexedAccess`, lint e format rápidos, CI em todo PR |
 
 ---
 
@@ -110,15 +121,36 @@ sequenceDiagram
 
 **Pré-requisitos:** [Bun 1.x](https://bun.sh) e Docker (Desktop ou Engine) com Compose.
 
+### Tudo com um comando
+
+```bash
+docker compose --profile app up -d --build --wait
+```
+
+Sobe Postgres, LocalStack, **3 réplicas da API atrás de um nginx**, o worker, o Prometheus e o Grafana. Um serviço de setup aplica as migrações, cria as filas e cadastra os provedores de desenvolvimento antes de tudo.
+
+| Endereço | O que é |
+|---|---|
+| `http://localhost:8080` | API (balanceada entre as 3 réplicas) |
+| `http://localhost:3030` | Grafana, já aberto no dashboard do chimp-ledger |
+| `http://localhost:9090` | Prometheus |
+
+Com a stack no ar, `bun run test:load` gera carga e o dashboard mostra vazão, latência, lag da outbox e o resto ao vivo.
+
+### Desenvolvimento, processo por processo
+
 ```bash
 bun install
 docker compose up -d --wait        # Postgres 16 + LocalStack (SQS)
 cp .env.example .env
 bun run migration:up               # cria esquema, triggers e permissões
 bun run setup:sqs                  # cria as filas FIFO e a DLQ no LocalStack
+bun run seed:dev                   # provedores provider-a e provider-b
 bun run start:api                  # http://localhost:3000
 bun run start:worker               # outra aba: fila, outbox e referências pendentes
 ```
+
+Para ligar a autenticação: `docker compose --profile auth up -d --wait` sobe o Keycloak com o realm versionado, e `AUTH_ENABLED=true` no `.env` passa a exigir token.
 
 O Postgres sobe com dois usuários: `chimp_migrator`, dono das tabelas e usado só nas migrações, e `chimp_app`, usado pela aplicação, **sem permissão** de `UPDATE`/`DELETE` no ledger.
 
@@ -129,6 +161,8 @@ Para derrubar tudo e apagar os dados: `docker compose down -v`.
 ---
 
 ## API
+
+Os exemplos usam `localhost:3000` (API rodando local). Com a stack completa do Compose, use `localhost:8080`.
 
 ### Carteiras
 
@@ -141,6 +175,39 @@ curl -X POST http://localhost:3000/wallets \
 # {"id":"…","playerId":"0192f28f-…","balance":{"amount":"1000.00","currency":"BRL"},"version":1}
 
 curl http://localhost:3000/wallets/<walletId>
+curl "http://localhost:3000/wallets/<walletId>/ledger?limit=50"          # cursor opaco em nextCursor
+curl -X POST http://localhost:3000/wallets/<walletId>/reconciliation    # saldo × ledger × corrente
+```
+
+### Apostas
+
+```bash
+curl -X POST http://localhost:3000/wagering/transactions \
+  -H 'content-type: application/json' \
+  -H 'Idempotency-Key: provider-a:transaction-123' \
+  -d '{"providerId":"provider-a","externalTransactionId":"transaction-123","playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","walletId":"<walletId>","roundId":"round-987","gameId":"fortune-chimp","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}'
+
+# {"transactionId":"…","status":"PROCESSED","balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
+```
+
+Pela fila, a mesma operação vai em `wager-transactions.fifo` no envelope `WagerTransactionRequested` do enunciado.
+
+### Autenticação
+
+Com `AUTH_ENABLED=true`, toda rota exige `Authorization: Bearer <token>`, menos `/health/*` e `/metrics`. Cada provedor é um client do Keycloak (`client_credentials`), e o `provider_id` vem do token.
+
+| Escopo | Libera | Quem tem |
+|---|---|---|
+| `wager:write` | enviar apostas (só em nome do próprio provedor) | provedores |
+| `wallet:read` | consultar carteira e transações (do próprio provedor) | provedores, backoffice |
+| `wallet:write` | abrir carteira | backoffice |
+| `wallet:reconcile` | rodar a reconciliação | backoffice |
+| `ledger:read` | ler o ledger completo da carteira | backoffice |
+| `wager:read:any` | ler transações de qualquer provedor | backoffice |
+
+```bash
+curl -s -X POST http://localhost:8081/realms/chimp/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d client_id=provider-a -d client_secret=provider-a-dev-secret
 ```
 
 ### Mapa de status
@@ -178,10 +245,17 @@ Cada `failureCode` vem com uma ação recomendada (`src/wagering/domain/failure-
 
 ```bash
 bun run test:unit          # domínio puro + regra de arquitetura (rápido, sem Docker)
-bun run test:integration   # Postgres e LocalStack reais via Testcontainers
+bun run test:integration   # Postgres, LocalStack e Keycloak reais via Testcontainers
+bun run test:concurrency   # várias instâncias reais, simulação com seed, processos derrubados
 bun test                   # tudo
+bun run test:mutation      # sabota cada garantia e confere que algum teste percebe
+bun run test:load          # carga, com relatório e verificação das invariantes
 bun run typecheck && bun run lint
 ```
+
+**Teste que testa mesmo.** `bun run test:mutation` quebra de propósito, uma de cada vez, 11 garantias (lock por carteira, idempotência, reversão única, ledger imutável, `SKIP LOCKED` da outbox, provedor vindo do token...), roda os testes que deveriam perceber e confere que eles falham. Resultado atual: **11 de 11 detectadas**.
+
+**Onde cada exigência do desafio está provada:** [`docs/RASTREABILIDADE.md`](docs/RASTREABILIDADE.md) liga cada item do enunciado, inclusive as falhas eliminatórias, ao código e ao teste que prova. O relatório de carga está em [`docs/LOAD_TEST.md`](docs/LOAD_TEST.md).
 
 Os testes de integração sobem containers próprios por arquivo, então nenhum teste enxerga dado de outro. Precisa do Docker rodando.
 
@@ -198,22 +272,26 @@ Destaques do que é testado contra o banco real:
 
 ```
 src/
-  shared/      Money, erros de domínio, JSON canônico, config, banco, HTTP
-  wallet/      Wallet, ledger encadeado, abertura e consulta
-  wagering/    WagerTransaction, regras de referência, códigos de falha, eventos
-  messaging/   inbox, outbox, envelope de eventos, topologia SQS
-  bootstrap/   montagem do Nest (api)
+  shared/      Money, erros de domínio, JSON canônico, config, banco, HTTP, logs e métricas
+  wallet/      Wallet, ledger encadeado, abertura, consulta, ledger paginado e reconciliação
+  wagering/    WagerTransaction, processamento, reprocessamento de pendências, códigos de falha, eventos
+  messaging/   inbox, outbox, relay, consumidor SQS, topologia das filas
+  auth/        porta de identidade, adaptador JWT/OIDC, guard e escopos
+  health/      vivacidade e prontidão
+  bootstrap/   montagem do Nest (api e worker)
 migrations/    SQL escrito à mão, com up e down
-docker/        script de papéis do Postgres
+scripts/       migração, filas e dados de desenvolvimento
+docker/        papéis do Postgres, realm do Keycloak, nginx, Prometheus e Grafana
+docs/          rastreabilidade do enunciado e relatório de carga
 test/
-  unit/ · integration/ · architecture/ · support/
+  unit/ · integration/ · concurrency/ · architecture/ · load/ · mutation/ · support/
 ```
 
 ---
 
 ## Status
 
-O desafio tem prazo de 3 dias e o projeto está sendo entregue em fatias verticais, cada uma testada antes da próxima.
+O projeto foi entregue em fatias verticais, cada uma testada antes da próxima, com revisão de código e de segurança entre os blocos.
 
 - [x] Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
 - [x] Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
@@ -222,10 +300,12 @@ O desafio tem prazo de 3 dias e o projeto está sendo entregue em fatias vertica
 - [x] Testes de concorrência com várias instâncias reais (simulação com seed)
 - [x] Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
 - [x] Reprocessamento de referências pendentes com backoff
-- [ ] Ledger paginado e reconciliação
-- [ ] Logs estruturados, métricas e health checks
-- [ ] Autenticação com Keycloak
-- [ ] Teste de carga
+- [x] Ledger paginado e reconciliação (sinaliza divergência, nunca corrige)
+- [x] Logs estruturados, métricas, health checks e dashboard no Grafana
+- [x] Autenticação com Keycloak (OIDC, escopos, provedor vindo do token)
+- [x] Teste de carga com relatório, e o gargalo encontrado corrigido
+- [x] Recuperação com processos derrubados no meio do trabalho
+- [x] Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
 - [ ] `ARCHITECTURE.md` com as decisões e trade-offs
 
 ---
@@ -238,6 +318,9 @@ Algumas coisas que só apareceram na hora de rodar contra infraestrutura de verd
 - **Uma função de trigger para duas tabelas.** A checagem "saldo bate com o ledger" dispara pela carteira e pelo lançamento, e `NEW` tem campos diferentes em cada tabela. Resolvi olhando `TG_TABLE_NAME`.
 - **CRLF quebra script de container.** No Windows o Git converte quebra de linha por padrão; `.gitattributes` fixa LF para o repositório inteiro.
 - **`emitDecoratorMetadata` no Bun.** Para não depender de como o runtime emite metadata, todo construtor do Nest usa `@Inject` explícito.
+- **Abortar o long polling esconde mensagens.** Cancelar o `ReceiveMessage` no cliente não cancela o receive no servidor: a requisição abandonada ainda pega as mensagens que chegam, e elas ficam invisíveis por um visibility timeout inteiro. O desligamento passou a esperar o receive voltar e devolver o que veio nele.
+- **O gargalo da outbox não era paralelismo.** Mais vias de publicação quase não mudaram o lag. Medindo, o SQS do LocalStack aceitava ~480 mensagens/s com uma por chamada e mais de 3.000/s em lotes de 10. A correção foi o lote, com o caso raro de falha no meio dele tratado e medido (detalhes em `docs/LOAD_TEST.md`).
+- **Sem o lock, o dinheiro não corrompe: ele falha.** Tirando o `FOR UPDATE` de propósito, os testes de concorrência quebram, mas o saldo continua certo: a versão no `WHERE` e o `UNIQUE (wallet_id, sequence)` barram a escrita concorrente. O lock dá vazão; as outras camadas garantem que o pior caso é erro, nunca saldo errado.
 
 ---
 
