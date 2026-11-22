@@ -3,7 +3,7 @@ import { z } from 'zod';
 const bool = z.enum(['true', 'false']).transform((v) => v === 'true');
 
 // Tudo que a aplicação lê do ambiente passa por aqui, uma vez, no boot.
-// Se faltar algo obrigatório o processo nem sobe — prefiro falhar no deploy
+// Se faltar algo obrigatório o processo nem sobe. Prefiro falhar no deploy
 // do que descobrir em produção que a fila estava apontando para o lugar errado.
 const baseSchema = z.object({
   DATABASE_URL: z.string().url(),

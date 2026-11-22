@@ -28,7 +28,7 @@ const ALLOWED_REFERENCES: Partial<Record<WagerTransactionKind, WagerTransactionK
  * Decide se a referência de uma transação serve. Não consulta banco: quem
  * chama já buscou a referência por (providerId, referenceExternalTransactionId).
  * A regra "reverter só uma vez" fica fora daqui porque depende de outras
- * transações — ela é garantida por índice único no banco.
+ * transações: ela é garantida por índice único no banco.
  */
 export function evaluateReference(
   transaction: WagerTransaction,

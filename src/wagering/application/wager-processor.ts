@@ -41,7 +41,7 @@ export interface ProcessOptions {
 
 /**
  * A parte que decide e aplica uma transação. Fica separada porque tem dois
- * chamadores — a submissão (HTTP/fila) e o worker de referências pendentes —
+ * chamadores, a submissão (HTTP/fila) e o worker de referências pendentes,
  * e as regras precisam ser exatamente as mesmas nos dois.
  *
  * Pré-condição: a carteira já está travada (FOR UPDATE) pela transação SQL

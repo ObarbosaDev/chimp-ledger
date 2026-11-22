@@ -1,7 +1,7 @@
 import { EntitySchema } from '@mikro-orm/core';
 
 // Formato das linhas como o banco guarda. Valores de dinheiro chegam como
-// string ("100.00") porque o driver do Postgres devolve NUMERIC como texto —
+// string ("100.00") porque o driver do Postgres devolve NUMERIC como texto,
 // e é exatamente isso que eu quero: nada de passar por number no caminho.
 
 export interface WalletRecord {

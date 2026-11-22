@@ -32,12 +32,12 @@ A regra que guiou o projeto: **uma garantia financeira não pode depender de uma
 | Saldo só muda com lançamento | `debit`/`credit` sempre devolvem o lançamento | trigger **diferido** confere no commit | `schema-constraints.test.ts` |
 | Ledger imutável | entidade congelada, sem métodos de escrita | trigger bloqueia `UPDATE`/`DELETE`/`TRUNCATE` + app sem permissão | `schema-constraints.test.ts` |
 | Ledger encadeado | cada lançamento leva o hash do anterior | trigger exige que o primeiro seja o 1 e que sequência, saldo e `prev_hash` continuem do anterior | `wallet-ledger-entry.test.ts`, `ledger-chain.test.ts` |
-| Uma carteira por jogador + moeda | — | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
+| Uma carteira por jogador + moeda | (só no banco) | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
 | Reverter só uma vez | regra de ciclo de vida no `WagerProcessor` | índice único parcial | `schema-constraints.test.ts` |
-| Aposta liquidada é fechada | WIN/LOSS válido impede nova liquidação e reembolso | — | `submit-wager.test.ts` (liquidação) |
+| Aposta liquidada é fechada | WIN/LOSS válido impede nova liquidação e reembolso | (só no domínio) | `submit-wager.test.ts` (liquidação) |
 | Estado final é final | transições lançam erro | trigger bloqueia mudança de status terminal | `wager-transaction.test.ts` |
 | Idempotência persistente | `payloadHash` canônico | `UNIQUE (provider_id, idempotency_key)` | `submit-wager.test.ts`, `same-wallet.test.ts` |
-| Provedor só age por si | o provedor vem do token, não do corpo | — | `auth.test.ts` (Keycloak real) |
+| Provedor só age por si | o provedor vem do token, não do corpo | (só na aplicação) | `auth.test.ts` (Keycloak real) |
 | Saldo alheio não vaza | recusa sem snapshot de saldo | `CHECK` proíbe snapshot nessa recusa | `submit-wager.test.ts` |
 | Eventos em ordem por carteira | relay reivindica carteiras inteiras, em lotes ordenados | `SKIP LOCKED` + lease | `outbox-relay.test.ts` |
 
@@ -48,6 +48,8 @@ Dez destas garantias também têm uma sabotagem em `bun run test:mutation`: o c�
 ---
 
 ## Arquitetura
+
+O raciocínio completo, com as alternativas descartadas e as limitações, está em [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Monólito modular, com módulos separados em `domain` / `application` / `infrastructure`. O domínio não conhece NestJS, MikroORM nem Bun, e existe um teste (`test/architecture`) que falha se alguém quebrar essa fronteira.
 
@@ -89,7 +91,7 @@ sequenceDiagram
 
 ### Decisões principais
 
-- **Lock pessimista por carteira** (`SELECT … FOR UPDATE`). A disputa só existe dentro da mesma carteira, então carteiras diferentes andam em paralelo e a carteira quente vira uma fila ordenada. Escolhi isso em vez de lock otimista porque, numa carteira muito disputada, o otimista vira uma tempestade de retries.
+- **Lock pessimista por carteira** (`SELECT ... FOR UPDATE`). A disputa só existe dentro da mesma carteira, então carteiras diferentes andam em paralelo e a carteira quente vira uma fila ordenada. Escolhi isso em vez de lock otimista porque, numa carteira muito disputada, o otimista vira uma tempestade de retries.
 - **`lock_timeout` de 2s.** Carteira travada demais não prende conexão: vira erro transitório (`503` no HTTP, nova tentativa na fila).
 - **Ledger encadeado por hash.** Cada lançamento guarda o hash do anterior. Trigger e permissão impedem alteração pela aplicação, e a corrente acusa até alteração feita por um DBA.
 - **Replay devolve o saldo daquele momento**, não o atual. A transação guarda um snapshot do saldo ao ficar final.
@@ -174,7 +176,7 @@ curl -X POST http://localhost:3000/wallets \
   -H 'content-type: application/json' \
   -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance":{"amount":"1000.00","currency":"BRL"}}'
 
-# {"id":"…","playerId":"0192f28f-…","balance":{"amount":"1000.00","currency":"BRL"},"version":1}
+# {"id":"...","playerId":"0192f28f-...","balance":{"amount":"1000.00","currency":"BRL"},"version":1}
 
 curl http://localhost:3000/wallets/<walletId>
 curl "http://localhost:3000/wallets/<walletId>/ledger?limit=50"          # cursor opaco em nextCursor
@@ -189,7 +191,7 @@ curl -X POST http://localhost:3000/wagering/transactions \
   -H 'Idempotency-Key: provider-a:transaction-123' \
   -d '{"providerId":"provider-a","externalTransactionId":"transaction-123","playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","walletId":"<walletId>","roundId":"round-987","gameId":"fortune-chimp","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}'
 
-# {"transactionId":"…","status":"PROCESSED","balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
+# {"transactionId":"...","status":"PROCESSED","balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
 ```
 
 Pela fila, a mesma operação vai em `wager-transactions.fifo` no envelope `WagerTransactionRequested` do enunciado.
@@ -255,7 +257,7 @@ bun run test:load          # carga, com relatório e verificação das invariant
 bun run typecheck && bun run lint
 ```
 
-**Teste que testa mesmo.** `bun run test:mutation` quebra de propósito, uma de cada vez, 11 garantias (lock por carteira, idempotência, reversão única, ledger imutável, `SKIP LOCKED` da outbox, provedor vindo do token...), roda os testes que deveriam perceber e confere que eles falham. Resultado atual: **11 de 11 detectadas**.
+**Sabotagens dirigidas.** `bun run test:mutation` quebra de propósito, uma de cada vez, 11 garantias (lock por carteira, idempotência, reversão única, ledger imutável, `SKIP LOCKED` da outbox, provedor vindo do token...), roda os testes que deveriam perceber e confere que eles falham. Resultado atual: **11 de 11 detectadas**.
 
 **Onde cada exigência do desafio está provada:** [`docs/RASTREABILIDADE.md`](docs/RASTREABILIDADE.md) liga cada item do enunciado, inclusive as falhas eliminatórias, ao código e ao teste que prova. O relatório de carga está em [`docs/LOAD_TEST.md`](docs/LOAD_TEST.md).
 
@@ -284,31 +286,31 @@ src/
 migrations/    SQL escrito à mão, com up e down
 scripts/       migração, filas e dados de desenvolvimento
 docker/        papéis do Postgres, realm do Keycloak, nginx, Prometheus e Grafana
-docs/          rastreabilidade do enunciado e relatório de carga
+docs/          rastreabilidade do enunciado, relatório de carga e registros de decisão (adr/)
 test/
   unit/ · integration/ · concurrency/ · architecture/ · load/ · mutation/ · support/
 ```
 
 ---
 
-## Status
+## O que foi entregue
 
-O projeto foi entregue em fatias verticais, cada uma testada antes da próxima, com revisão de código e de segurança entre os blocos.
+Construído em fatias verticais, cada uma testada antes da próxima, com uma rodada de revisão e correção entre os blocos. Cada bloco entrou por um pull request próprio, com o CI rodando a integração contra Postgres e LocalStack reais.
 
-- [x] Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
-- [x] Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
-- [x] Abertura e consulta de carteira via HTTP, mapa único de erros
-- [x] Submissão de transações (`POST /wagering/transactions`) com idempotência
-- [x] Testes de concorrência com várias instâncias reais (simulação com seed)
-- [x] Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
-- [x] Reprocessamento de referências pendentes com backoff
-- [x] Ledger paginado e reconciliação (sinaliza divergência, nunca corrige)
-- [x] Logs estruturados, métricas, health checks e dashboard no Grafana
-- [x] Autenticação com Keycloak (OIDC, escopos, provedor vindo do token)
-- [x] Teste de carga com relatório, e o gargalo encontrado corrigido
-- [x] Recuperação com processos derrubados no meio do trabalho
-- [x] Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
-- [ ] `ARCHITECTURE.md` com as decisões e trade-offs
+- Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
+- Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
+- Abertura e consulta de carteira via HTTP, mapa único de erros
+- Submissão de transações (`POST /wagering/transactions`) com idempotência
+- Testes de concorrência com várias instâncias reais (simulação com seed)
+- Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
+- Reprocessamento de referências pendentes com backoff
+- Ledger paginado e reconciliação (sinaliza divergência, nunca corrige)
+- Logs estruturados, métricas, health checks e dashboard no Grafana
+- Autenticação com Keycloak (OIDC, escopos, provedor vindo do token)
+- Teste de carga com relatório, e o gargalo encontrado corrigido
+- Recuperação com processos derrubados no meio do trabalho
+- Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) com as decisões, interpretações, trade-offs e limitações, e os registros de decisão em [`docs/adr/`](docs/adr)
 
 ---
 

@@ -17,12 +17,12 @@ export interface HttpErrorResponse {
  * Mapa único de erro → status. Fica num lugar só para todos os endpoints
  * responderem igual. A regra que o provedor precisa entender:
  *
- *   400 o pedido está malformado — corrija antes de reenviar
+ *   400 o pedido está malformado: corrija antes de reenviar
  *   404 o recurso não existe
- *   409 conflito (idempotência ou duplicidade) — não reenvie igual
- *   422 regra de negócio recusou — decisão final, ver failureCode
+ *   409 conflito (idempotência ou duplicidade): não reenvie igual
+ *   422 regra de negócio recusou, decisão final, ver failureCode
  *   202 aceito, processamento pendente
- *   503 problema nosso e passageiro — reenvie depois do Retry-After
+ *   503 problema nosso e passageiro: reenvie depois do Retry-After
  */
 const DOMAIN_STATUS: Record<string, { status: number; publicCode?: string }> = {
   INVALID_PAYLOAD: { status: 400 },
@@ -36,7 +36,7 @@ const DOMAIN_STATUS: Record<string, { status: number; publicCode?: string }> = {
   IDEMPOTENCY_CONFLICT: { status: 409 },
 };
 
-export const RETRY_AFTER_SECONDS = 1;
+const RETRY_AFTER_SECONDS = 1;
 
 export function toHttpError(error: unknown): HttpErrorResponse {
   const auth = authError(error);

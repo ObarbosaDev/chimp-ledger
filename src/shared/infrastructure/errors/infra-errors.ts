@@ -19,7 +19,7 @@ export function isTransientInfraError(error: unknown): boolean {
   return TRANSIENT_SQLSTATES.has(code) || TRANSIENT_NODE_CODES.has(code) || code.startsWith('08');
 }
 
-/** Lock que não saiu dentro do lock_timeout — conta na métrica de conflito. */
+/** Lock que não saiu dentro do lock_timeout. Conta na métrica de conflito. */
 export function isLockConflict(error: unknown): boolean {
   return error instanceof LockWaitTimeoutException || sqlState(error) === '55P03';
 }

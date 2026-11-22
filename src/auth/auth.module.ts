@@ -8,7 +8,7 @@ import { AuthGuard } from './auth.guard';
 import type { IdentityProvider } from './identity-provider';
 import { JwtIdentityProvider } from './jwt-identity-provider';
 
-export const IDENTITY_PROVIDER = Symbol('IdentityProvider');
+const IDENTITY_PROVIDER = Symbol('IdentityProvider');
 
 @Module({
   providers: [

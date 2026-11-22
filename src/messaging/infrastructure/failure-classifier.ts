@@ -4,10 +4,10 @@ import { DomainError } from '../../shared/domain/errors';
 /**
  * O que fazer com uma mensagem que deu erro:
  *
- * - business: decisão de negócio que já ficou registrada — confirma (ack);
- * - permanent: reenviar a mesma mensagem nunca vai funcionar — vai direto
+ * - business: decisão de negócio que já ficou registrada: confirma (ack);
+ * - permanent: reenviar a mesma mensagem nunca vai funcionar: vai direto
  *   para a DLQ, com o motivo, para alguém olhar;
- * - transient: problema nosso e passageiro — não confirma, a fila entrega
+ * - transient: problema nosso e passageiro: não confirma, a fila entrega
  *   de novo com backoff. Se insistir, o redrive manda para a DLQ sozinho.
  */
 export type FailureKind = 'business' | 'permanent' | 'transient';

@@ -296,7 +296,7 @@ export class Migration20261120120000_esquema_inicial extends Migration {
     `);
 
     // Estado final é final. E os campos de negócio nunca mudam depois de
-    // gravados — só o ciclo de vida anda.
+    // gravados; só o ciclo de vida anda.
     this.addSql(`
       create function check_wager_transaction_update() returns trigger language plpgsql as $$
       begin

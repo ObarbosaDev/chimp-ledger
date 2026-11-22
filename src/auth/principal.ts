@@ -34,7 +34,7 @@ export class Principal {
   /**
    * Pode ver dados do provedor informado? O próprio provedor pode; ver de
    * qualquer provedor exige o escopo explícito. Não ter `provider_id` no
-   * token NÃO libera nada: um client de provedor criado sem o mapper da
+   * token não libera nada: um client de provedor criado sem o mapper da
    * claim continua enxergando só o que é dele (no caso, nada).
    */
   canSee(providerId: string): boolean {

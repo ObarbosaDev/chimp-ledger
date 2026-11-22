@@ -11,7 +11,7 @@ import { LedgerController } from './infrastructure/http/ledger.controller';
 import { WalletController } from './infrastructure/http/wallet.controller';
 import { ObservedReconciliationAlarm } from './infrastructure/reconciliation-alarm';
 
-export const RECONCILIATION_ALARM = Symbol('ReconciliationAlarm');
+const RECONCILIATION_ALARM = Symbol('ReconciliationAlarm');
 
 @Module({
   controllers: [WalletController, LedgerController],

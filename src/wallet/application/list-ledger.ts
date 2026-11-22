@@ -22,7 +22,7 @@ export interface LedgerPage {
   nextAfterSequence: number | null;
 }
 
-export function toLedgerEntryView(e: WalletLedgerEntry): LedgerEntryView {
+function toLedgerEntryView(e: WalletLedgerEntry): LedgerEntryView {
   return {
     id: e.id,
     transactionId: e.transactionId,

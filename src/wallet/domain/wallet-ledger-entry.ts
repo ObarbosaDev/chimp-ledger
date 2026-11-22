@@ -29,7 +29,7 @@ export interface LedgerEntryState extends CreateLedgerEntryProps {
 /**
  * Lançamento do razão. Não tem setter nem método de transição: depois de
  * criado ele só pode ser lido. Além disso cada lançamento carrega o hash do
- * anterior, formando uma corrente por carteira — se alguém alterar uma linha
+ * anterior, formando uma corrente por carteira: se alguém alterar uma linha
  * direto no banco, a corrente quebra e a reconciliação aponta onde.
  */
 export class WalletLedgerEntry {

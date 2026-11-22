@@ -26,7 +26,7 @@ const SQS_BATCH_LIMIT = 10;
  * - MessageDeduplicationId = eventId: se o mesmo evento for publicado de
  *   novo (processo morreu antes de marcar), o SQS descarta dentro da janela
  *   de 5 minutos. Fora dela, quem protege é o consumidor deduplicando por
- *   eventId — a dedup do SQS é otimização, não garantia.
+ *   eventId: a dedup do SQS é otimização, não garantia.
  */
 export class SqsEventPublisher implements EventPublisher {
   constructor(
