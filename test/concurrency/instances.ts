@@ -79,7 +79,7 @@ async function waitUntilReady(url: string, timeoutMs = 30_000): Promise<void> {
   throw new Error(`Instância ${url} não subiu em ${timeoutMs}ms`);
 }
 
-function freePort(): Promise<number> {
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);
