@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Cada réplica da API é descoberta pelo DNS do Docker (um registro A por
+  # réplica), então escalar o serviço não exige mexer aqui.
+  - job_name: api
+    dns_sd_configs:
+      - names: ["api"]
+        type: A
+        port: 3000
+
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:3001"]
