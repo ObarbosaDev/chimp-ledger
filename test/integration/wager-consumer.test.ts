@@ -18,6 +18,7 @@ import { SubmitWagerTransaction } from '../../src/wagering/application/submit-wa
 import { WagerProcessor } from '../../src/wagering/application/wager-processor';
 import { ReferenceRetryPolicy } from '../../src/wagering/domain/reference-retry-policy';
 import { OpenWallet } from '../../src/wallet/application/open-wallet';
+import { assertLedgerInvariantForAllWallets } from '../support/invariants';
 import { startTestStack, type TestStack } from '../support/test-stack';
 
 describe('consumidor SQS de transações', () => {
@@ -368,5 +369,9 @@ describe('consumidor SQS de transações', () => {
       status: 'REJECTED',
       failure_code: 'INSUFFICIENT_FUNDS',
     });
+  });
+
+  test('invariante final: em toda carteira, saldo igual ao reconstruído pelo ledger', async () => {
+    expect(await assertLedgerInvariantForAllWallets(stack)).toBeGreaterThan(0);
   });
 });

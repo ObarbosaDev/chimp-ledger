@@ -31,3 +31,14 @@ export async function assertLedgerInvariant(stack: TestStack, walletId: string):
   expect(row?.entries).toBe(row?.ledger_sequence);
   expect(row?.last_sequence ?? 0).toBe(row?.ledger_sequence ?? -1);
 }
+
+/**
+ * A mesma invariante para todas as carteiras do banco. Fecha os arquivos de
+ * teste que movimentam dinheiro por vários caminhos, para nenhuma carteira
+ * escapar da conferência.
+ */
+export async function assertLedgerInvariantForAllWallets(stack: TestStack): Promise<number> {
+  const wallets = await stack.sql<{ id: string }>('select id from wallets order by id');
+  for (const { id } of wallets) await assertLedgerInvariant(stack, id);
+  return wallets.length;
+}
