@@ -42,6 +42,15 @@ describe('Money — contrato de entrada', () => {
     expect(() => Money.from({ amount: '1.00', currency: c })).toThrow(InvalidMoneyError);
   });
 
+  // Arredondar em silêncio é decidir centavo no lugar do provedor. Valor com
+  // casa a mais volta como erro de contrato, e ele corrige o que mandou.
+  test('nunca arredonda: terceira casa é recusada, mesmo sendo zero', () => {
+    for (const amount of ['1.005', '1.004', '1.995', '1.000']) {
+      expect(() => brl(amount)).toThrow(InvalidMoneyError);
+    }
+    expect(brl('1.99').add(brl('0.01')).toJSON().amount).toBe('2.00');
+  });
+
   test('aceita o teto de NUMERIC(19,2)', () => {
     expect(brl('99999999999999999.99').toJSON().amount).toBe('99999999999999999.99');
   });

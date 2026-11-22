@@ -6,6 +6,10 @@ import {
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
 import type { MikroORM } from '@mikro-orm/postgresql';
+import {
+  IntegrationEvent,
+  type IntegrationEventProps,
+} from '../../src/messaging/domain/integration-event';
 import { OutboxMessage } from '../../src/messaging/domain/outbox-message';
 import {
   type EventPublisher,
@@ -18,6 +22,16 @@ import { runMigrations } from '../../src/shared/infrastructure/database/migrator
 import { MikroOrmUnitOfWork } from '../../src/shared/infrastructure/database/mikro-orm-unit-of-work';
 import { createOrm } from '../../src/shared/infrastructure/database/orm';
 import { startTestStack, type TestStack } from '../support/test-stack';
+
+/** Evento mínimo, só para provar que uma transação desfeita não deixa nada na outbox. */
+class RollbackProbe extends IntegrationEvent<{ motivo: string }> {
+  readonly eventType = 'RollbackProbe';
+  readonly version = 1;
+
+  constructor(props: IntegrationEventProps<{ motivo: string }>) {
+    super(props);
+  }
+}
 
 describe('relay da outbox', () => {
   let stack: TestStack;
@@ -54,8 +68,17 @@ describe('relay da outbox', () => {
     );
   }
 
-  const relay = (publisher: EventPublisher, aggregatesPerRound = 50) =>
-    new OutboxRelay(orm, publisher, { aggregatesPerRound, leaseMs: 30_000 });
+  const relay = (
+    publisher: EventPublisher,
+    aggregatesPerRound = 50,
+    onOrderAnomaly?: (count: number) => void,
+  ) =>
+    new OutboxRelay(orm, publisher, {
+      aggregatesPerRound,
+      leaseMs: 30_000,
+      publishBatchSize: 10,
+      onOrderAnomaly,
+    });
 
   const realPublisher = () => new SqsEventPublisher(stack.sqs, queues.events);
 
@@ -232,22 +255,104 @@ describe('relay da outbox', () => {
     await drainEvents();
   }, 60_000);
 
+  // É assim que o worker roda: várias vias chamando o mesmo relay ao mesmo
+  // tempo. Cada via reivindica carteiras diferentes; dentro de uma carteira
+  // a ordem não pode mudar e nenhum evento pode sair duas vezes.
+  test('várias vias no mesmo relay mantêm a ordem e não repetem evento', async () => {
+    const wallets = Array.from({ length: 12 }, (_, i) => `wallet-via-${i}`);
+    for (const w of wallets) await seed(15, w);
+    const publishLog: string[] = [];
+    const real = realPublisher();
+    const shared = relay(
+      {
+        async publish(events) {
+          const outcome = await real.publish(events);
+          publishLog.push(...outcome.published);
+          return outcome;
+        },
+      },
+      2,
+    );
+
+    let total = 0;
+    for (let round = 0; round < 40 && total < 180; round++) {
+      const lanes = await Promise.all(Array.from({ length: 4 }, () => shared.runOnce(plus(1_000))));
+      total += lanes.reduce((sum, n) => sum + n, 0);
+    }
+
+    expect(total).toBe(180);
+    expect(new Set(publishLog).size).toBe(publishLog.length);
+    for (const w of wallets) {
+      const expected = await idsInOrder(w);
+      expect(publishLog.filter((id) => expected.includes(id))).toEqual(expected);
+    }
+    await drainEvents();
+  }, 60_000);
+
   test('evento de transação que deu rollback nunca existe na outbox', async () => {
     const uow = new MikroOrmUnitOfWork(orm, 2_000);
-    const fakeEvent = {
+    const event = new RollbackProbe({
       eventId: randomUUID(),
-      eventType: 'WalletBalanceChanged',
       aggregateId: 'wallet-z',
+      correlationId: 'corr-rollback',
       occurredAt: t0,
-      toJSON: () => ({ eventId: 'x' }),
-    };
+      data: { motivo: 'transação que não vai comitar' },
+    });
     await expect(
       uow.run(async (tx) => {
-        await tx.outbox.enqueue([OutboxMessage.enqueue(fakeEvent as never)]);
+        await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
         throw new Error('falha depois de gravar o evento');
       }),
     ).rejects.toThrow('falha depois de gravar o evento');
 
     expect(await relay(realPublisher()).runOnce(plus(1_000))).toBe(0);
+  });
+
+  test('publica em lotes de até 10 por carteira, na ordem dos eventos', async () => {
+    await seed(25, 'wallet-lote');
+    const calls: number[] = [];
+    const real = realPublisher();
+    const counting: EventPublisher = {
+      async publish(events) {
+        calls.push(events.length);
+        return real.publish(events);
+      },
+    };
+
+    expect(await relay(counting).runOnce(plus(1_000))).toBe(25);
+    expect(calls).toEqual([10, 10, 5]);
+
+    const eventIdsInOrder = (
+      await stack.sql<{ event_id: string }>(
+        `select payload->>'eventId' as event_id from outbox_messages
+          where aggregate_id = 'wallet-lote' order by occurred_at, id`,
+      )
+    ).map((r) => r.event_id);
+    expect(await drainEvents()).toEqual(eventIdsInOrder);
+  });
+
+  test('falha no meio do lote: o aceito conta como publicado e a anomalia de ordem é sinalizada', async () => {
+    await seed(10, 'wallet-anomalia');
+    const ids = await idsInOrder('wallet-anomalia');
+    const second = ids[1] ?? '';
+    const real = realPublisher();
+    // O SQS recusou só o segundo evento do lote e aceitou os outros.
+    const partial: EventPublisher = {
+      async publish(events) {
+        const outcome = await real.publish(events.filter((e) => e.id !== second));
+        return { published: outcome.published, failed: [...outcome.failed, second] };
+      },
+    };
+    const anomalies: number[] = [];
+
+    expect(await relay(partial, 50, (n) => anomalies.push(n)).runOnce(plus(1_000))).toBe(9);
+
+    const rows = await stack.sql<{ id: string; published: boolean; attempts: number }>(
+      `select id, published_at is not null as published, attempts from outbox_messages
+        where aggregate_id = 'wallet-anomalia' order by occurred_at, id`,
+    );
+    expect(rows.filter((r) => !r.published).map((r) => [r.id, r.attempts])).toEqual([[second, 1]]);
+    expect(anomalies).toEqual([8]);
+    await drainEvents();
   });
 });

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { type ApiHarness, startApiHarness } from '../support/api-harness';
+import { assertLedgerInvariantForAllWallets } from '../support/invariants';
 
 describe('HTTP /wallets', () => {
   let api: ApiHarness;
@@ -123,5 +124,9 @@ describe('HTTP /wallets', () => {
 
   test('GET com id que não é uuid → 400', async () => {
     expect((await api.request('GET', '/wallets/nao-e-uuid')).status).toBe(400);
+  });
+
+  test('invariante final: em toda carteira, saldo igual ao reconstruído pelo ledger', async () => {
+    expect(await assertLedgerInvariantForAllWallets(api.stack)).toBeGreaterThan(0);
   });
 });

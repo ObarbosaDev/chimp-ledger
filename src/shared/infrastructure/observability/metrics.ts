@@ -62,6 +62,12 @@ export class AppMetrics {
     registers: [this.registry],
   });
 
+  readonly outboxOrderAnomalies = new Counter({
+    name: 'outbox_order_anomalies_total',
+    help: 'Eventos aceitos pelo SQS depois de um que falhou no mesmo lote (saíram fora de ordem)',
+    registers: [this.registry],
+  });
+
   readonly authFailures = new Counter({
     name: 'auth_failures_total',
     help: 'Requisições recusadas na autenticação, por motivo',

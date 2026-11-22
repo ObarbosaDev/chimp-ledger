@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { type ApiHarness, startApiHarness } from '../support/api-harness';
+import { assertLedgerInvariantForAllWallets } from '../support/invariants';
 import { startKeycloak, type TestKeycloak } from '../support/keycloak';
 
 describe('autenticação com Keycloak', () => {
@@ -278,4 +279,8 @@ describe('autenticação com Keycloak', () => {
       await withSlash.stop();
     }
   }, 180_000);
+
+  test('invariante final: em toda carteira, saldo igual ao reconstruído pelo ledger', async () => {
+    expect(await assertLedgerInvariantForAllWallets(api.stack)).toBeGreaterThan(0);
+  });
 });

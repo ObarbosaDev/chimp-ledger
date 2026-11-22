@@ -14,6 +14,8 @@ const baseSchema = z.object({
   OUTBOX_AGGREGATES_PER_ROUND: z.coerce.number().int().positive().default(50),
   OUTBOX_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(250),
+  OUTBOX_RELAY_LANES: z.coerce.number().int().min(1).max(32).default(4),
+  OUTBOX_PUBLISH_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(10),
 
   SQS_CONSUMER_NAME: z.string().default('wager-consumer'),
   // Também é o tempo máximo que o desligamento espera o receive atual voltar.

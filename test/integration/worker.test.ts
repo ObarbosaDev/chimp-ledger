@@ -5,6 +5,7 @@ import { createWorker, type Worker } from '../../src/bootstrap/worker';
 import { ensureQueues } from '../../src/messaging/infrastructure/sqs-topology';
 import { loadConfig } from '../../src/shared/infrastructure/config';
 import { runMigrations } from '../../src/shared/infrastructure/database/migrator';
+import { assertLedgerInvariantForAllWallets } from '../support/invariants';
 import { startTestStack, type TestStack } from '../support/test-stack';
 
 describe('processo worker', () => {
@@ -115,5 +116,9 @@ describe('processo worker', () => {
     expect(metrics).toMatch(/^outbox_published_total [1-9]/m);
     expect(metrics).toMatch(/^wager_consumer_messages_total\{outcome="acked"\} [1-9]/m);
     expect(metrics).toMatch(/^wager_transactions_total\{[^}]*source="sqs"[^}]*\} [1-9]/m);
+  });
+
+  test('invariante final: em toda carteira, saldo igual ao reconstruído pelo ledger', async () => {
+    expect(await assertLedgerInvariantForAllWallets(stack)).toBeGreaterThan(0);
   });
 });
