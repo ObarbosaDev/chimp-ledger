@@ -9,6 +9,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { RequireScopes } from '../../../auth/decorators';
+import { Scope } from '../../../auth/principal';
 import { moneyBody } from '../../../shared/infrastructure/http/contracts';
 import { ZodBody } from '../../../shared/infrastructure/http/zod-body';
 import { GetWallet, OpenWallet, type WalletView } from '../../application/open-wallet';
@@ -33,11 +35,13 @@ export class WalletController {
 
   @Post()
   @HttpCode(201)
+  @RequireScopes(Scope.WalletWrite)
   open(@Body(new ZodBody(openWalletBody)) body: OpenWalletBody): Promise<WalletView> {
     return this.openWallet.execute(body);
   }
 
   @Get(':walletId')
+  @RequireScopes(Scope.WalletRead)
   get(@Param('walletId', new ParseUUIDPipe()) walletId: string): Promise<WalletView> {
     return this.getWallet.execute(walletId);
   }

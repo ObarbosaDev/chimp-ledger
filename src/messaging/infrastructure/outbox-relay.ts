@@ -8,6 +8,8 @@ export interface OutboxRelayOptions {
   aggregatesPerRound: number;
   /** Quanto tempo os eventos reivindicados ficam reservados para quem os pegou. */
   leaseMs: number;
+  /** Ponto de falha injetável, só para testes: roda logo depois de reivindicar os eventos. */
+  afterClaim?: () => void;
 }
 
 interface ClaimedRow {
@@ -55,6 +57,7 @@ export class OutboxRelay {
   async runOnce(now: Date): Promise<number> {
     const claimed = await this.claim(now);
     if (claimed.length === 0) return 0;
+    this.options.afterClaim?.();
 
     const outcomes = await Promise.all(
       groupByAggregate(claimed).map((events) => this.publishInOrder(events)),

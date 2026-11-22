@@ -14,7 +14,7 @@ export interface QueueUrls {
 
 /** Quantas entregas uma mensagem tem antes de o SQS mandar ela pra DLQ. */
 export const MAX_RECEIVE_COUNT = 5;
-const VISIBILITY_TIMEOUT_SECONDS = 30;
+const DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 30;
 
 /**
  * Cria (ou só confirma) as filas. CreateQueue no SQS é idempotente quando os
@@ -24,7 +24,11 @@ const VISIBILITY_TIMEOUT_SECONDS = 30;
  * MessageDeduplicationId. E mesmo assim isso é só otimização — quem garante
  * que nada é aplicado duas vezes é a inbox no banco.
  */
-export async function ensureQueues(sqs: SQSClient, names: QueueNames): Promise<QueueUrls> {
+export async function ensureQueues(
+  sqs: SQSClient,
+  names: QueueNames,
+  { visibilityTimeoutSeconds = DEFAULT_VISIBILITY_TIMEOUT_SECONDS } = {},
+): Promise<QueueUrls> {
   const fifo = { FifoQueue: 'true', ContentBasedDeduplication: 'false' };
 
   const transactionsDlq = await createQueue(sqs, names.transactionsDlq, fifo);
@@ -32,7 +36,7 @@ export async function ensureQueues(sqs: SQSClient, names: QueueNames): Promise<Q
 
   const transactions = await createQueue(sqs, names.transactions, {
     ...fifo,
-    VisibilityTimeout: String(VISIBILITY_TIMEOUT_SECONDS),
+    VisibilityTimeout: String(visibilityTimeoutSeconds),
     RedrivePolicy: JSON.stringify({
       deadLetterTargetArn: dlqArn,
       maxReceiveCount: MAX_RECEIVE_COUNT,

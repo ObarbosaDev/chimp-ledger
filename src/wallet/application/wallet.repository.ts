@@ -16,4 +16,10 @@ export interface WalletRepository {
 
 export interface LedgerRepository {
   append(entry: WalletLedgerEntry): Promise<void>;
+  /** Lançamentos com sequência maior que `afterSequence`, em ordem crescente. */
+  listByWallet(
+    walletId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<WalletLedgerEntry[]>;
 }

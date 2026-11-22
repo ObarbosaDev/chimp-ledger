@@ -9,6 +9,10 @@ export interface Instance {
 
 export interface Fleet {
   instances: Instance[];
+  /** Mata a instância sem aviso (SIGKILL), como uma queda de máquina. */
+  kill(index: number): Promise<void>;
+  /** Sobe de novo a instância, na mesma porta. */
+  restart(index: number): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -18,10 +22,8 @@ export interface Fleet {
  * "várias instâncias atrás de um load balancer" sem sair da máquina.
  */
 export async function startFleet(stack: TestStack, size: number): Promise<Fleet> {
-  const instances: Instance[] = [];
-  for (let i = 0; i < size; i++) {
-    const port = await freePort();
-    const child = Bun.spawn(['bun', 'src/main.api.ts'], {
+  const spawnApi = (port: number) =>
+    Bun.spawn(['bun', 'src/main.api.ts'], {
       env: {
         ...process.env,
         DATABASE_URL: stack.appUrl,
@@ -30,14 +32,30 @@ export async function startFleet(stack: TestStack, size: number): Promise<Fleet>
         LOG_LEVEL: 'silent',
       },
       stdout: 'ignore',
-      stderr: 'inherit',
+      stderr: 'ignore',
     });
-    instances.push({ url: `http://127.0.0.1:${port}`, process: child });
+
+  const instances: Instance[] = [];
+  for (let i = 0; i < size; i++) {
+    const port = await freePort();
+    instances.push({ url: `http://127.0.0.1:${port}`, process: spawnApi(port) });
   }
   await Promise.all(instances.map((i) => waitUntilReady(i.url)));
 
   return {
     instances,
+    async kill(index) {
+      const instance = instances[index];
+      if (!instance) return;
+      instance.process.kill('SIGKILL');
+      await instance.process.exited;
+    },
+    async restart(index) {
+      const instance = instances[index];
+      if (!instance) return;
+      instance.process = spawnApi(Number(new URL(instance.url).port));
+      await waitUntilReady(instance.url);
+    },
     async stop() {
       for (const i of instances) i.process.kill();
       await Promise.all(instances.map((i) => i.process.exited));

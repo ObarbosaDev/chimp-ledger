@@ -19,6 +19,13 @@ export interface WagerConsumerOptions {
   /** Base do backoff de reentrega em falha transitória: base · 2^(entregas−1). */
   retryBaseSeconds: number;
   maxMessages?: number;
+  /** Toda falha passa por aqui antes de decidir o destino da mensagem (log, métrica). */
+  onFailure?: (error: unknown, kind: FailureKind, sqsMessageId: string | undefined) => void;
+  /**
+   * Ponto de falha injetável, só para testes de recuperação: roda depois do
+   * commit e antes do ack, o pior momento para o processo morrer.
+   */
+  afterCommit?: () => void;
 }
 
 const MAX_VISIBILITY_SECONDS = 300;
@@ -125,10 +132,12 @@ export class WagerConsumer {
           inbox: { consumerName: this.options.consumerName, messageId },
         },
       );
+      this.options.afterCommit?.();
       await this.delete(message);
       return this.report('acked');
     } catch (error) {
       const kind = classifyFailure(error);
+      this.options.onFailure?.(error, kind, message.MessageId);
       if (kind === 'business') {
         await this.delete(message);
         return this.report('acked', kind);

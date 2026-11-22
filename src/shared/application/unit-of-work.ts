@@ -24,5 +24,14 @@ export interface TransactionScope {
 }
 
 export interface UnitOfWork {
-  run<T>(work: (scope: TransactionScope) => Promise<T>): Promise<T>;
+  run<T>(work: (scope: TransactionScope) => Promise<T>, options?: RunOptions): Promise<T>;
+}
+
+export interface RunOptions {
+  /**
+   * Leitura num snapshot único (REPEATABLE READ, somente leitura): tudo que
+   * a função lê enxerga o banco no mesmo instante, sem travar ninguém.
+   * Usado onde comparo dados de tabelas diferentes, como a reconciliação.
+   */
+  snapshot?: boolean;
 }

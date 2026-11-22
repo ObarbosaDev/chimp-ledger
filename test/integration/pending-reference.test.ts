@@ -7,6 +7,7 @@ import { MikroOrmUnitOfWork } from '../../src/shared/infrastructure/database/mik
 import { createOrm } from '../../src/shared/infrastructure/database/orm';
 import { SystemClock, UuidV7Generator } from '../../src/shared/infrastructure/system';
 import { ReprocessPendingReferences } from '../../src/wagering/application/reprocess-pending-references';
+import type { WagerObserver, WagerOutcome } from '../../src/wagering/application/wager-observer';
 import { WagerProcessor } from '../../src/wagering/application/wager-processor';
 import { ReferenceRetryPolicy } from '../../src/wagering/domain/reference-retry-policy';
 import { type ApiHarness, startApiHarness } from '../support/api-harness';
@@ -40,6 +41,7 @@ describe('worker de referências pendentes', () => {
       clock?: Clock;
       lockTimeoutMs?: number;
       onError?: (id: string, e: unknown) => void;
+      observer?: WagerObserver;
     } = {},
   ) =>
     new ReprocessPendingReferences(
@@ -47,7 +49,7 @@ describe('worker de referências pendentes', () => {
       new WagerProcessor(new UuidV7Generator(), policy),
       policy,
       opts.clock ?? new SystemClock(),
-      { batchSize: 50, onError: opts.onError },
+      { batchSize: 50, onError: opts.onError, observer: opts.observer },
     );
 
   // Rodada em que o relógio "de processamento" é o mesmo instante do lote.
@@ -327,5 +329,22 @@ describe('worker de referências pendentes', () => {
       [res.body.transactionId],
     );
     expect(event?.correlation).toBe(correlationId);
+  });
+
+  test('a métrica só conta a pendência quando ela sai do estado pendente', async () => {
+    const { w, betExt, reversalId } = await reversalBeforeBet();
+    await onlyDue([reversalId]);
+    const outcomes: WagerOutcome[] = [];
+    const observer: WagerObserver = { transactionHandled: (o) => outcomes.push(o) };
+
+    // Referência ainda ausente: só reagenda, nada de novo para contar.
+    const parkedAt = later(3_000);
+    await reprocessor({ clock: fixedClock(parkedAt), observer }).runOnce(parkedAt);
+    expect(outcomes).toHaveLength(0);
+
+    await submit(w, { externalTransactionId: betExt });
+    const appliedAt = later(60_000);
+    await reprocessor({ clock: fixedClock(appliedAt), observer }).runOnce(appliedAt);
+    expect(outcomes.map((o) => String(o.result.status))).toEqual(['PROCESSED']);
   });
 });

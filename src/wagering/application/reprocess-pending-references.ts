@@ -2,12 +2,14 @@ import type { Clock } from '../../shared/application/ports';
 import type { UnitOfWork } from '../../shared/application/unit-of-work';
 import type { ReferenceRetryPolicy } from '../domain/reference-retry-policy';
 import { WagerTransactionStatus } from '../domain/wager-transaction';
+import type { WagerObserver } from './wager-observer';
 import type { WagerProcessor } from './wager-processor';
 
 export interface ReprocessOptions {
   batchSize: number;
   /** Chamado quando uma pendência falha; a rodada continua com as outras. */
   onError?: (transactionId: string, error: unknown) => void;
+  observer?: WagerObserver;
 }
 
 /**
@@ -53,14 +55,15 @@ export class ReprocessPendingReferences {
     return handled;
   }
 
-  private reprocess(id: string, walletId: string, dueAt: Date): Promise<boolean> {
-    return this.uow.run(async (tx) => {
+  private async reprocess(id: string, walletId: string, dueAt: Date): Promise<boolean> {
+    const startedAt = performance.now();
+    const handled = await this.uow.run(async (tx) => {
       const wallet = await tx.wallets.findByIdForUpdate(walletId);
       const pending = await tx.transactions.findById(id);
       const stillDue =
         pending?.status === WagerTransactionStatus.PendingReference &&
         (pending.nextReferenceCheckAt?.getTime() ?? 0) <= dueAt.getTime();
-      if (!wallet || !pending || !stillDue) return false;
+      if (!wallet || !pending || !stillDue) return undefined;
 
       // Só agora, com o lock na mão, leio o relógio: é este o instante em que
       // o saldo muda, e os eventos da carteira precisam sair em ordem causal.
@@ -70,18 +73,32 @@ export class ReprocessPendingReferences {
         createdAt: pending.createdAt,
         now: at,
       });
-      await this.processor.process(
+      const correlationId = pending.correlationId ?? pending.idempotencyKey;
+      const result = await this.processor.process(
         tx,
         pending,
         wallet,
-        {
-          correlationId: pending.correlationId ?? pending.idempotencyKey,
-          causationId: pending.id,
-        },
+        { correlationId, causationId: pending.id },
         at,
         { referenceWaitExhausted: exhausted },
       );
-      return true;
+      return { pending, correlationId, result };
     });
+    if (!handled) return false;
+
+    // Reagendar (a referência ainda não chegou) não é desfecho: a transação
+    // continua pendente. Só conto e registro quando ela sai desse estado.
+    if (handled.result.status === WagerTransactionStatus.PendingReference) return true;
+
+    this.options.observer?.transactionHandled({
+      source: 'reprocess',
+      kind: handled.pending.kind,
+      providerId: handled.pending.providerId,
+      walletId: handled.pending.walletId,
+      correlationId: handled.correlationId,
+      result: handled.result,
+      durationMs: performance.now() - startedAt,
+    });
+    return true;
   }
 }
