@@ -18,7 +18,8 @@
     "test:mutation": "bun test/mutation/run.ts",
     "migration:up": "bun scripts/migrate.ts up",
     "migration:down": "bun scripts/migrate.ts down",
-    "setup:sqs": "bun scripts/setup-sqs.ts"
+    "setup:sqs": "bun scripts/setup-sqs.ts",
+    "seed:dev": "bun scripts/seed-dev.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.1173.0",
