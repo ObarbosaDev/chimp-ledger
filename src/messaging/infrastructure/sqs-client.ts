@@ -22,7 +22,7 @@ export function queueNamesFrom(config: AppConfig): QueueNames {
 }
 
 /**
- * Só descobre as URLs. Criar fila não é trabalho do worker em produção —
+ * Só descobre as URLs. Criar fila não é trabalho do worker em produção:
  * isso é infraestrutura (aqui, o `bun run setup:sqs`). Se a fila não
  * existir, o worker nem sobe, o que é melhor do que subir e ficar mudo.
  */

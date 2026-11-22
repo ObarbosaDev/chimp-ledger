@@ -23,7 +23,7 @@ export interface TransactionView {
   createdAt: string;
 }
 
-export function toTransactionView(t: WagerTransaction): TransactionView {
+function toTransactionView(t: WagerTransaction): TransactionView {
   return {
     transactionId: t.id,
     providerId: t.providerId,

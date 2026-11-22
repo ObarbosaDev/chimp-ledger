@@ -4,7 +4,7 @@ import { Money } from '../../../src/shared/domain/money';
 
 const brl = (amount: string) => Money.from({ amount, currency: 'BRL' });
 
-describe('Money — contrato de entrada', () => {
+describe('Money: contrato de entrada', () => {
   test('aceita string com exatamente duas casas e devolve o mesmo formato', () => {
     expect(brl('25.00').toJSON()).toEqual({ amount: '25.00', currency: 'BRL' });
     expect(brl('0.00').toJSON()).toEqual({ amount: '0.00', currency: 'BRL' });
@@ -56,7 +56,7 @@ describe('Money — contrato de entrada', () => {
   });
 });
 
-describe('Money — aritmética exata', () => {
+describe('Money: aritmética exata', () => {
   test('0.10 + 0.20 é exatamente 0.30 (onde number erra)', () => {
     expect(brl('0.10').add(brl('0.20')).toJSON().amount).toBe('0.30');
   });
@@ -99,7 +99,7 @@ describe('Money — aritmética exata', () => {
   });
 });
 
-describe('Money — moedas diferentes', () => {
+describe('Money: moedas diferentes', () => {
   const usd = Money.from({ amount: '1.00', currency: 'USD' });
 
   test.each([

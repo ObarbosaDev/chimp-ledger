@@ -32,12 +32,12 @@ A regra que guiou o projeto: **uma garantia financeira não pode depender de uma
 | Saldo só muda com lançamento | `debit`/`credit` sempre devolvem o lançamento | trigger **diferido** confere no commit | `schema-constraints.test.ts` |
 | Ledger imutável | entidade congelada, sem métodos de escrita | trigger bloqueia `UPDATE`/`DELETE`/`TRUNCATE` + app sem permissão | `schema-constraints.test.ts` |
 | Ledger encadeado | cada lançamento leva o hash do anterior | trigger exige que o primeiro seja o 1 e que sequência, saldo e `prev_hash` continuem do anterior | `wallet-ledger-entry.test.ts`, `ledger-chain.test.ts` |
-| Uma carteira por jogador + moeda | — | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
+| Uma carteira por jogador + moeda | (só no banco) | `UNIQUE (player_id, currency)` | `wallets.http.test.ts` |
 | Reverter só uma vez | regra de ciclo de vida no `WagerProcessor` | índice único parcial | `schema-constraints.test.ts` |
-| Aposta liquidada é fechada | WIN/LOSS válido impede nova liquidação e reembolso | — | `submit-wager.test.ts` (liquidação) |
+| Aposta liquidada é fechada | WIN/LOSS válido impede nova liquidação e reembolso | (só no domínio) | `submit-wager.test.ts` (liquidação) |
 | Estado final é final | transições lançam erro | trigger bloqueia mudança de status terminal | `wager-transaction.test.ts` |
 | Idempotência persistente | `payloadHash` canônico | `UNIQUE (provider_id, idempotency_key)` | `submit-wager.test.ts`, `same-wallet.test.ts` |
-| Provedor só age por si | o provedor vem do token, não do corpo | — | `auth.test.ts` (Keycloak real) |
+| Provedor só age por si | o provedor vem do token, não do corpo | (só na aplicação) | `auth.test.ts` (Keycloak real) |
 | Saldo alheio não vaza | recusa sem snapshot de saldo | `CHECK` proíbe snapshot nessa recusa | `submit-wager.test.ts` |
 | Eventos em ordem por carteira | relay reivindica carteiras inteiras, em lotes ordenados | `SKIP LOCKED` + lease | `outbox-relay.test.ts` |
 
@@ -91,7 +91,7 @@ sequenceDiagram
 
 ### Decisões principais
 
-- **Lock pessimista por carteira** (`SELECT … FOR UPDATE`). A disputa só existe dentro da mesma carteira, então carteiras diferentes andam em paralelo e a carteira quente vira uma fila ordenada. Escolhi isso em vez de lock otimista porque, numa carteira muito disputada, o otimista vira uma tempestade de retries.
+- **Lock pessimista por carteira** (`SELECT ... FOR UPDATE`). A disputa só existe dentro da mesma carteira, então carteiras diferentes andam em paralelo e a carteira quente vira uma fila ordenada. Escolhi isso em vez de lock otimista porque, numa carteira muito disputada, o otimista vira uma tempestade de retries.
 - **`lock_timeout` de 2s.** Carteira travada demais não prende conexão: vira erro transitório (`503` no HTTP, nova tentativa na fila).
 - **Ledger encadeado por hash.** Cada lançamento guarda o hash do anterior. Trigger e permissão impedem alteração pela aplicação, e a corrente acusa até alteração feita por um DBA.
 - **Replay devolve o saldo daquele momento**, não o atual. A transação guarda um snapshot do saldo ao ficar final.
@@ -176,7 +176,7 @@ curl -X POST http://localhost:3000/wallets \
   -H 'content-type: application/json' \
   -d '{"playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","initialBalance":{"amount":"1000.00","currency":"BRL"}}'
 
-# {"id":"…","playerId":"0192f28f-…","balance":{"amount":"1000.00","currency":"BRL"},"version":1}
+# {"id":"...","playerId":"0192f28f-...","balance":{"amount":"1000.00","currency":"BRL"},"version":1}
 
 curl http://localhost:3000/wallets/<walletId>
 curl "http://localhost:3000/wallets/<walletId>/ledger?limit=50"          # cursor opaco em nextCursor
@@ -191,7 +191,7 @@ curl -X POST http://localhost:3000/wagering/transactions \
   -H 'Idempotency-Key: provider-a:transaction-123' \
   -d '{"providerId":"provider-a","externalTransactionId":"transaction-123","playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1","walletId":"<walletId>","roundId":"round-987","gameId":"fortune-chimp","kind":"BET","money":{"amount":"25.00","currency":"BRL"}}'
 
-# {"transactionId":"…","status":"PROCESSED","balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
+# {"transactionId":"...","status":"PROCESSED","balance":{"amount":"975.00","currency":"BRL"},"idempotentReplay":false}
 ```
 
 Pela fila, a mesma operação vai em `wager-transactions.fifo` no envelope `WagerTransactionRequested` do enunciado.

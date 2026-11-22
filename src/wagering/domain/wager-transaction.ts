@@ -77,7 +77,7 @@ const INTERNAL_PROVIDER = 'internal';
  *   PROCESSED, REJECTED, FAILED são finais.
  *
  * `processedAt` marca quando a transação ficou final (em qualquer dos três)
- * e `resultBalance` guarda o saldo naquele instante — é isso que o replay
+ * e `resultBalance` guarda o saldo naquele instante. É isso que o replay
  * devolve, e não o saldo de agora.
  */
 export class WagerTransaction {
@@ -93,7 +93,7 @@ export class WagerTransaction {
     public readonly gameId: string,
     public readonly kind: WagerTransactionKind,
     public readonly money: Money,
-    /** id no provedor — não o id interno */
+    /** id no provedor, não o id interno */
     public readonly referenceExternalTransactionId: string | undefined,
     public readonly correlationId: string | undefined,
     public readonly createdAt: Date,

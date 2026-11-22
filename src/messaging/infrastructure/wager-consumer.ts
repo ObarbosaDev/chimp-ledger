@@ -42,7 +42,7 @@ const envelope = z
 export type MessageOutcome = 'acked' | 'dead-lettered' | 'retry-later' | 'released';
 
 /**
- * Consome a fila de transações e chama o MESMO caso de uso do HTTP.
+ * Consome a fila de transações e chama o mesmo caso de uso do HTTP.
  *
  * Garantias:
  * - ack (delete) só depois que a transação SQL comitou;

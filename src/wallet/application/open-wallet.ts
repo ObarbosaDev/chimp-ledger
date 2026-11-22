@@ -12,7 +12,7 @@ export interface WalletView {
   version: number;
 }
 
-export function toWalletView(wallet: Wallet): WalletView {
+function toWalletView(wallet: Wallet): WalletView {
   return {
     id: wallet.id,
     playerId: wallet.playerId,
@@ -23,8 +23,8 @@ export function toWalletView(wallet: Wallet): WalletView {
 
 /**
  * Abre a carteira. Quando o saldo inicial é maior que zero, a transação
- * OPENING e o lançamento de crédito entram na mesma transação SQL — e o
- * banco confere isso no commit (trigger deferido), então não tem como sair
+ * OPENING e o lançamento de crédito entram na mesma transação SQL, e o
+ * banco confere isso no commit (trigger diferido), então não tem como sair
  * carteira com saldo "do nada".
  */
 export class OpenWallet {

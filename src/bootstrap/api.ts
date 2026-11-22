@@ -23,7 +23,7 @@ class ApiModule {
   }
 }
 
-/** Monta a aplicação HTTP sem abrir porta — o main decide se escuta, o teste usa inject. */
+/** Monta a aplicação HTTP sem abrir porta: o main decide se escuta, o teste usa inject. */
 export async function createApiApp(
   config: AppConfig,
   options: CoreOptions = {},

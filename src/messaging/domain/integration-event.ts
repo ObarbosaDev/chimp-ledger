@@ -24,7 +24,7 @@ export interface IntegrationEventEnvelope<T> {
 
 /**
  * Envelope comum dos eventos que saem do serviço. Cada evento concreto fixa
- * `eventType` e `version` na própria classe — assim ninguém publica um
+ * `eventType` e `version` na própria classe. Assim ninguém publica um
  * "WalletBalanceChange" escrito errado no meio do código.
  *
  * `data` precisa ser JSON puro (strings, números inteiros, objetos). Nada de

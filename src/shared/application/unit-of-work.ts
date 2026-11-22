@@ -11,7 +11,7 @@ import type {
 /**
  * Tudo que precisa ser atômico passa por aqui: os repositórios recebidos
  * dentro de `run` enxergam a mesma transação SQL. Se a função lançar, nada
- * do que ela gravou fica no banco — nem saldo, nem ledger, nem inbox, nem
+ * do que ela gravou fica no banco: nem saldo, nem ledger, nem inbox, nem
  * evento na outbox.
  */
 export interface TransactionScope {

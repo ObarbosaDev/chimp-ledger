@@ -13,7 +13,7 @@ export interface QueueUrls {
 }
 
 /** Quantas entregas uma mensagem tem antes de o SQS mandar ela pra DLQ. */
-export const MAX_RECEIVE_COUNT = 5;
+const MAX_RECEIVE_COUNT = 5;
 const DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 30;
 
 /**
@@ -21,7 +21,7 @@ const DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 30;
  * atributos batem, então dá para rodar isso em todo setup sem medo.
  *
  * Deduplicação por conteúdo fica desligada de propósito: quem manda define o
- * MessageDeduplicationId. E mesmo assim isso é só otimização — quem garante
+ * MessageDeduplicationId. E mesmo assim isso é só otimização: quem garante
  * que nada é aplicado duas vezes é a inbox no banco.
  */
 export async function ensureQueues(

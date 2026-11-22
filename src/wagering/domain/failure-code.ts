@@ -1,6 +1,6 @@
 /**
  * Códigos estáveis que vão na resposta e nos eventos. O provedor decide o
- * que fazer olhando só para o código — nunca para a mensagem. Por isso cada
+ * que fazer olhando só para o código, nunca para a mensagem. Por isso cada
  * um tem uma ação recomendada:
  *
  * - RETRY: pode reenviar igual, o problema é nosso e passageiro;
@@ -41,7 +41,7 @@ export const FAILURE_CODE_META: Record<FailureCode, { action: FailureAction; mea
   },
   [FailureCode.ReferenceNotProcessed]: {
     action: 'GIVE_UP',
-    meaning: 'A referência existe, mas foi rejeitada ou falhou — não há o que reverter.',
+    meaning: 'A referência existe, mas foi rejeitada ou falhou: não há o que reverter.',
   },
   [FailureCode.ReferenceMismatch]: {
     action: 'FIX_PAYLOAD',

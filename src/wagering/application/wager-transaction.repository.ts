@@ -8,7 +8,7 @@ export interface WagerTransactionRepository {
    * Tenta reservar a chave de idempotência gravando a transação. Devolve
    * false se já existir outra com a mesma chave ou o mesmo id externo. Se a
    * outra ainda estiver em andamento, o Postgres espera ela terminar antes
-   * de responder — então quem chega depois sempre enxerga o resultado final.
+   * de responder, então quem chega depois sempre enxerga o resultado final.
    */
   insertIfAbsent(transaction: WagerTransaction): Promise<boolean>;
 

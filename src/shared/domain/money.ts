@@ -13,7 +13,7 @@ const Exact = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_EVEN }
 
 // Contrato de entrada: sempre duas casas, sem sinal, sem zero à esquerda e
 // sem notação científica. Preferi ser rígido aqui do que "consertar" o valor
-// do provedor — se eu arredondo "1.005", alguém ganha ou perde um centavo.
+// do provedor: se eu arredondo "1.005", alguém ganha ou perde um centavo.
 const AMOUNT_PATTERN = /^(0|[1-9]\d{0,16})\.\d{2}$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const SCALE = 2;

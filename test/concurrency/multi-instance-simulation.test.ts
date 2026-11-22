@@ -8,7 +8,7 @@ import { type Fleet, startFleet } from './instances';
 /**
  * Simulação com 3 processos reais da API disputando as mesmas carteiras.
  *
- * Não dá para prever o saldo final exato — depende de qual aposta ganhou a
+ * Não dá para prever o saldo final exato: depende de qual aposta ganhou a
  * corrida em cada momento. Então eu não comparo com um valor esperado: eu
  * verifico propriedades que precisam valer em QUALQUER ordem de execução.
  * Se alguma quebrar, a seed impressa reproduz a mesma sequência de operações.

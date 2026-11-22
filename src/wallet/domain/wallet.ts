@@ -44,8 +44,8 @@ export interface MovementProps {
 
 /**
  * Raiz do agregado de carteira. A única forma de mudar o saldo é por
- * debit/credit, e os dois devolvem o lançamento do ledger já calculado —
- * assim é impossível alterar saldo sem gerar a linha correspondente.
+ * debit/credit, e os dois devolvem o lançamento do ledger já calculado.
+ * Assim é impossível alterar saldo sem gerar a linha correspondente.
  *
  * Concorrência não é resolvida aqui: quem chama precisa ter a linha da
  * carteira travada (SELECT ... FOR UPDATE) antes de chamar debit/credit.
@@ -100,7 +100,7 @@ export class Wallet {
     return { wallet, openingEntry };
   }
 
-  /** Reconstrução a partir da persistência — não revalida transições. */
+  /** Reconstrução a partir da persistência. Não revalida transições. */
   static rehydrate(state: WalletState): Wallet {
     return new Wallet(
       state.id,
