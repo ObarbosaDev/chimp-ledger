@@ -257,7 +257,7 @@ bun run test:load          # carga, com relatório e verificação das invariant
 bun run typecheck && bun run lint
 ```
 
-**Teste que testa mesmo.** `bun run test:mutation` quebra de propósito, uma de cada vez, 11 garantias (lock por carteira, idempotência, reversão única, ledger imutável, `SKIP LOCKED` da outbox, provedor vindo do token...), roda os testes que deveriam perceber e confere que eles falham. Resultado atual: **11 de 11 detectadas**.
+**Sabotagens dirigidas.** `bun run test:mutation` quebra de propósito, uma de cada vez, 11 garantias (lock por carteira, idempotência, reversão única, ledger imutável, `SKIP LOCKED` da outbox, provedor vindo do token...), roda os testes que deveriam perceber e confere que eles falham. Resultado atual: **11 de 11 detectadas**.
 
 **Onde cada exigência do desafio está provada:** [`docs/RASTREABILIDADE.md`](docs/RASTREABILIDADE.md) liga cada item do enunciado, inclusive as falhas eliminatórias, ao código e ao teste que prova. O relatório de carga está em [`docs/LOAD_TEST.md`](docs/LOAD_TEST.md).
 
@@ -293,24 +293,24 @@ test/
 
 ---
 
-## Status
+## O que foi entregue
 
-O projeto foi entregue em fatias verticais, cada uma testada antes da próxima, com revisão de código e de segurança entre os blocos.
+Construído em fatias verticais, cada uma testada antes da próxima, com uma rodada de revisão e correção entre os blocos. Cada bloco entrou por um pull request próprio, com o CI rodando a integração contra Postgres e LocalStack reais.
 
-- [x] Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
-- [x] Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
-- [x] Abertura e consulta de carteira via HTTP, mapa único de erros
-- [x] Submissão de transações (`POST /wagering/transactions`) com idempotência
-- [x] Testes de concorrência com várias instâncias reais (simulação com seed)
-- [x] Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
-- [x] Reprocessamento de referências pendentes com backoff
-- [x] Ledger paginado e reconciliação (sinaliza divergência, nunca corrige)
-- [x] Logs estruturados, métricas, health checks e dashboard no Grafana
-- [x] Autenticação com Keycloak (OIDC, escopos, provedor vindo do token)
-- [x] Teste de carga com relatório, e o gargalo encontrado corrigido
-- [x] Recuperação com processos derrubados no meio do trabalho
-- [x] Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
-- [x] [`ARCHITECTURE.md`](ARCHITECTURE.md) com as decisões, interpretações, trade-offs e limitações, e os registros de decisão em [`docs/adr/`](docs/adr)
+- Domínio: `Money`, `Wallet`, ledger encadeado, `WagerTransaction`, regras de referência, inbox/outbox, eventos
+- Esquema com garantias no banco (constraints, triggers, permissões) e migrações reversíveis
+- Abertura e consulta de carteira via HTTP, mapa único de erros
+- Submissão de transações (`POST /wagering/transactions`) com idempotência
+- Testes de concorrência com várias instâncias reais (simulação com seed)
+- Relay da outbox, consumidor SQS com DLQ e desligamento sem perder mensagem
+- Reprocessamento de referências pendentes com backoff
+- Ledger paginado e reconciliação (sinaliza divergência, nunca corrige)
+- Logs estruturados, métricas, health checks e dashboard no Grafana
+- Autenticação com Keycloak (OIDC, escopos, provedor vindo do token)
+- Teste de carga com relatório, e o gargalo encontrado corrigido
+- Recuperação com processos derrubados no meio do trabalho
+- Sabotagens dirigidas (`bun run test:mutation`) e mapa de rastreabilidade
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) com as decisões, interpretações, trade-offs e limitações, e os registros de decisão em [`docs/adr/`](docs/adr)
 
 ---
 
