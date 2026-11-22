@@ -36,10 +36,11 @@ export interface SubmitContext {
  * chamam este mesmo caso de uso, então as regras não têm como divergir.
  *
  * Tudo acontece numa transação SQL só, nesta ordem:
- *   1. inbox (se veio da fila) — reentrega da mesma mensagem não faz nada;
- *   2. trava a carteira (SELECT ... FOR UPDATE) — serializa a carteira;
- *   3. reserva a chave de idempotência — replay ou conflito param aqui;
- *   4. o WagerProcessor confere contexto e referência e aplica.
+ *   1. inbox (se veio da fila): reentrega da mesma mensagem não faz nada;
+ *   2. trava a carteira (SELECT ... FOR UPDATE): serializa a carteira;
+ *   3. confere se o provedor pode operar na moeda;
+ *   4. reserva a chave de idempotência: replay ou conflito param aqui;
+ *   5. o WagerProcessor confere contexto e referência e aplica.
  */
 export class SubmitWagerTransaction {
   constructor(
@@ -94,8 +95,6 @@ export class SubmitWagerTransaction {
     });
 
     return this.uow.run(async (tx) => {
-      await this.assertProviderAllowed(tx, candidate);
-
       if (context.inbox) {
         const firstDelivery = await tx.inbox.record(
           InboxMessage.receive({ ...context.inbox, payloadHash, receivedAt: at }),
@@ -108,6 +107,19 @@ export class SubmitWagerTransaction {
       const wallet = await tx.wallets.findByIdForUpdate(candidate.walletId);
       if (!wallet) {
         throw new WalletNotFoundError(`Carteira ${candidate.walletId} não encontrada`);
+      }
+
+      // O provedor pode ter sido desativado depois de mandar a operação. O
+      // reenvio dela continua sendo replay: a recusa vale só para o que é novo.
+      if (!(await this.providerAllowed(tx, candidate))) {
+        const sameKey = await tx.transactions.findByIdempotencyKey(
+          candidate.providerId,
+          candidate.idempotencyKey,
+        );
+        if (sameKey) return this.resolveExisting(tx, candidate, wallet);
+        throw new ProviderNotAllowedError(
+          `Provedor ${candidate.providerId} não pode operar em ${candidate.money.currency}`,
+        );
       }
 
       const reserved = await tx.transactions.insertIfAbsent(candidate);
@@ -166,17 +178,11 @@ export class SubmitWagerTransaction {
     return resultOf(existing, wallet, true);
   }
 
-  private async assertProviderAllowed(
+  private async providerAllowed(
     tx: TransactionScope,
     transaction: WagerTransaction,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const provider = await tx.providers.findById(transaction.providerId);
-    const allowed =
-      provider?.active === true && provider.currencies.includes(transaction.money.currency);
-    if (!allowed) {
-      throw new ProviderNotAllowedError(
-        `Provedor ${transaction.providerId} não pode operar em ${transaction.money.currency}`,
-      );
-    }
+    return provider?.active === true && provider.currencies.includes(transaction.money.currency);
   }
 }

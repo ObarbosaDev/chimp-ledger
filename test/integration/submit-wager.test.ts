@@ -433,6 +433,27 @@ describe('POST /wagering/transactions', () => {
       expect(res.status).toBe(422);
       expect(res.body.code).toBe('PROVIDER_NOT_ALLOWED');
     });
+
+    test('provedor desativado depois: o replay ainda devolve o resultado original', async () => {
+      await api.stack.sql(
+        `insert into providers (id, currencies) values ('provider-desativado', '{BRL}')`,
+      );
+      const w = await openWallet();
+      const body = wager(w, { providerId: 'provider-desativado' });
+      const first = await submit(body);
+      expect(first.status).toBe(201);
+
+      await api.stack.sql(`update providers set active = false where id = 'provider-desativado'`);
+
+      const replay = await submit(body);
+      expect(replay.status).toBe(200);
+      expect(replay.body.idempotentReplay).toBe(true);
+      expect(replay.body.transactionId).toBe(first.body.transactionId);
+
+      const nova = await submit(wager(w, { providerId: 'provider-desativado' }));
+      expect(nova.status).toBe(422);
+      expect(nova.body.code).toBe('PROVIDER_NOT_ALLOWED');
+    });
   });
 
   describe('consultas', () => {
