@@ -39,7 +39,7 @@ A regra que guiou o projeto: **uma garantia financeira não pode depender de uma
 | Saldo alheio não vaza | recusa sem snapshot de saldo | `CHECK` proíbe snapshot nessa recusa | `submit-wager.test.ts` |
 | Eventos em ordem por carteira | relay reivindica carteiras inteiras, em lotes ordenados | `SKIP LOCKED` + lease | `outbox-relay.test.ts` |
 
-Toda linha desta tabela tem uma sabotagem correspondente em `bun run test:mutation`: o código é quebrado de propósito e o teste precisa falhar.
+Dez destas garantias também têm uma sabotagem em `bun run test:mutation`: o código é quebrado de propósito e algum teste precisa falhar. As outras três (carteira única por jogador e moeda, saldo só com lançamento e estado final imutável) são provadas direto contra o banco em `schema-constraints.test.ts`.
 
 > **Por que no banco também?** Porque bug acontece, e SQL manual também. Se um dia alguém atualizar um saldo direto no Postgres sem o lançamento correspondente, o commit falha. A aplicação não precisa ser perfeita para o dinheiro ficar certo.
 
